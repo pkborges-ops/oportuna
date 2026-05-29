@@ -1,4 +1,5 @@
 import { sair } from "@/app/auth/actions";
+import { RefreshButton } from "@/components/layout/refresh-button";
 import { Button } from "@/components/ui/button";
 import { appConfig } from "@/lib/app-config";
 
@@ -29,6 +30,7 @@ export function AppHeader({ nomeUsuario, emailUsuario }: AppHeaderProps) {
         </h1>
       </div>
       <div className="flex items-center gap-3">
+        <RefreshButton />
         <div className="hidden text-right text-sm sm:block">
           <p className="font-medium text-slate-950">{nomeUsuario}</p>
           <p className="text-slate-500">{emailUsuario}</p>
