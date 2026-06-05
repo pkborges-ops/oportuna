@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { cadastrar } from "@/app/auth/actions";
+import { cadastrar, entrarComGoogle } from "@/app/auth/actions";
+import { GoogleAuthButton } from "@/components/auth/google-auth-button";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -66,6 +67,21 @@ export default async function CadastroPage({ searchParams }: CadastroPageProps) 
               </Button>
             </div>
           </form>
+
+          <div className="my-5 flex items-center gap-3">
+            <span className="h-px flex-1 bg-slate-200" />
+            <span className="text-xs font-medium uppercase tracking-normal text-slate-400">
+              ou
+            </span>
+            <span className="h-px flex-1 bg-slate-200" />
+          </div>
+
+          <form action={entrarComGoogle}>
+            <input type="hidden" name="redirectTo" value="/dashboard" />
+            <input type="hidden" name="rotaErro" value="/cadastro" />
+            <GoogleAuthButton>Criar conta com Google</GoogleAuthButton>
+          </form>
+
           <p className="mt-5 text-center text-sm text-slate-600">
             Já possui acesso?{" "}
             <Link href="/login" className="font-semibold text-slate-950">

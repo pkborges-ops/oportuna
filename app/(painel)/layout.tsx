@@ -22,7 +22,13 @@ export default async function PainelLayout({
       ? claims.user_metadata
       : {};
   const nomeUsuario =
-    typeof metadata.nome === "string" ? metadata.nome : "Usuário autenticado";
+    typeof metadata.nome === "string"
+      ? metadata.nome
+      : typeof metadata.name === "string"
+        ? metadata.name
+        : typeof metadata.full_name === "string"
+          ? metadata.full_name
+          : "Usuário autenticado";
   const emailUsuario =
     typeof claims.email === "string" ? claims.email : "Sessão ativa";
 

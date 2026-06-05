@@ -1,6 +1,7 @@
 import Link from "next/link";
 
-import { entrar } from "@/app/auth/actions";
+import { entrar, entrarComGoogle } from "@/app/auth/actions";
+import { GoogleAuthButton } from "@/components/auth/google-auth-button";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -69,6 +70,20 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                   {params.mensagem}
                 </div>
               ) : null}
+
+              <form action={entrarComGoogle}>
+                <input type="hidden" name="redirectTo" value={redirectTo} />
+                <input type="hidden" name="rotaErro" value="/login" />
+                <GoogleAuthButton>Continuar com Google</GoogleAuthButton>
+              </form>
+
+              <div className="my-5 flex items-center gap-3">
+                <span className="h-px flex-1 bg-slate-200" />
+                <span className="text-xs font-medium uppercase tracking-normal text-slate-400">
+                  ou entre com e-mail
+                </span>
+                <span className="h-px flex-1 bg-slate-200" />
+              </div>
 
               <form action={entrar} className="grid gap-4">
                 <input type="hidden" name="redirectTo" value={redirectTo} />

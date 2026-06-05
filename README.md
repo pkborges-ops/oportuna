@@ -44,7 +44,7 @@ Checklist curto:
 
 1. Execute os scripts SQL da pasta `supabase/` no projeto Supabase de produção.
 2. Cadastre as variáveis abaixo em Settings > Environment Variables na Vercel para Production e Preview.
-3. No Supabase Auth, adicione a URL de produção da Vercel em Site URL e Redirect URLs, incluindo `/auth/confirm`.
+3. No Supabase Auth, adicione a URL de produção da Vercel em Site URL e Redirect URLs, incluindo `/auth/confirm` e `/auth/callback`.
 4. Rode `npm run lint`, `npm run check:env` e `npm run build` antes do deploy.
 5. Faça o deploy pela integração Git da Vercel ou com `vercel --prod`.
 6. Confirme em Settings > Cron Jobs se `/api/cron/alertas` está ativo.
@@ -68,6 +68,23 @@ CRON_SECRET=
 ```
 
 Sem `OPENAI_API_KEY`, o sistema continua rodando e apenas deixa de gerar análises novas por IA. Sem `EMAIL_ALERTS_PROVIDER`, `EMAIL_ALERTS_API_KEY` ou `EMAIL_ALERTS_FROM`, os alertas continuam em modo simulação com logs no servidor.
+
+### Login com Google
+
+No Supabase, habilite o provider em Authentication > Sign In / Providers > Google e informe o Client ID e Client Secret criados no Google Cloud Console.
+
+No Google Cloud Console, cadastre a Authorized redirect URI exibida pelo Supabase para o provider Google. Ela normalmente segue o formato:
+
+```bash
+https://SEU-PROJETO.supabase.co/auth/v1/callback
+```
+
+No Supabase Auth, mantenha também estas Redirect URLs da aplicação:
+
+```bash
+https://oportuna-two.vercel.app/auth/callback
+https://oportuna-two.vercel.app/auth/confirm
+```
 
 ## Execução automática dos alertas
 
