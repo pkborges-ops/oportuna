@@ -31,21 +31,6 @@ function obterValor(valor?: number) {
 function obterStatus(
   contratacao: ContratacaoPncp,
 ): StatusOportunidade {
-  const encerramento = contratacao.dataEncerramentoProposta;
-
-  if (encerramento) {
-    const dataEncerramento = new Date(encerramento);
-
-    if (
-      !Number.isNaN(dataEncerramento.getTime()) &&
-      dataEncerramento.getTime() < Date.now()
-    ) {
-      return "encerrada";
-    }
-
-    return "aberta";
-  }
-
   const situacao =
     contratacao.situacaoCompraNome?.toLowerCase() ?? "";
 
@@ -57,6 +42,7 @@ function obterStatus(
     "anul",
     "desert",
     "fracass",
+    "cancel",
   ];
 
   if (
@@ -65,6 +51,19 @@ function obterStatus(
     )
   ) {
     return "encerrada";
+  }
+
+  const encerramento = contratacao.dataEncerramentoProposta;
+
+  if (encerramento) {
+    const dataEncerramento = new Date(encerramento);
+
+    if (
+      !Number.isNaN(dataEncerramento.getTime()) &&
+      dataEncerramento.getTime() < Date.now()
+    ) {
+      return "encerrada";
+    }
   }
 
   return "aberta";
