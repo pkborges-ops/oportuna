@@ -1,4 +1,50 @@
 const PNCP_BASE_URL = "https://pncp.gov.br/api/consulta";
+const MAX_TENTATIVAS = 3;
+
+async function consultarPncp(url: URL): Promise<Response> {
+  for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa += 1) {
+    let response: Response | undefined;
+
+    try {
+      response = await fetch(url, {
+        headers: { Accept: "application/json" },
+        cache: "no-store",
+      });
+    } catch {
+      // Não registrar o erro bruto: ele pode conter dados da requisição.
+    }
+
+    if (response?.ok) {
+      return response;
+    }
+
+    const motivo = response ? `HTTP ${response.status}` : "erro de rede";
+    const podeRepetir =
+      !response || response.status === 429 || response.status >= 500;
+    const repetir = podeRepetir && tentativa < MAX_TENTATIVAS;
+    const esperaMs = repetir ? 500 * tentativa : 0;
+
+    console.warn("[pncp] Falha na consulta.", {
+      pagina: url.searchParams.get("pagina"),
+      tentativa,
+      maxTentativas: MAX_TENTATIVAS,
+      motivo,
+      repetir,
+      esperaMs,
+    });
+
+    // Liberar o corpo da resposta antes de tentar novamente.
+    await response?.body?.cancel().catch(() => undefined);
+
+    if (!repetir) {
+      throw new Error(`Erro ao consultar PNCP: ${motivo}`);
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, esperaMs));
+  }
+
+  throw new Error("Erro ao consultar PNCP: tentativas esgotadas.");
+}
 
 export type ContratacaoPncp = {
   numeroControlePNCP?: string;
@@ -94,18 +140,7 @@ export async function listarContratacoesPncp({
     );
   }
 
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-    },
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(
-      `Erro ao consultar PNCP: HTTP ${response.status}`,
-    );
-  }
+  const response = await consultarPncp(url);
 
   if (response.status === 204) {
     return {
