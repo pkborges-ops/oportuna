@@ -13,6 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
+import { formatarCnpj, interpretarNumeroControlePncp } from "@/lib/pncp";
 import { buscarAnalisePorPerfil } from "@/services/analises-service";
 import { buscarOportunidadePorId } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
@@ -178,6 +179,7 @@ export default async function DetalheOportunidadePage({
     notFound();
   }
 
+  const dadosPncp = interpretarNumeroControlePncp(oportunidade.codigo);
   const perfis = await listarPerfis();
   const perfilSelecionado =
     perfis.find((perfil) => perfil.id === query.perfilId) ?? perfis[0];
@@ -278,7 +280,33 @@ export default async function DetalheOportunidadePage({
                     {formatarData(oportunidade.dataAbertura)}
                   </p>
                 </div>
+                {dadosPncp ? (
+                  <>
+                    <div>
+                      <p className="text-slate-500">Código PNCP</p>
+                      <p className="break-all font-medium text-slate-950">
+                        {oportunidade.codigo}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-slate-500">CNPJ do órgão</p>
+                      <p className="font-medium text-slate-950">
+                        {formatarCnpj(dadosPncp.cnpj)}
+                      </p>
+                    </div>
+                  </>
+                ) : null}
               </div>
+              {dadosPncp ? (
+                <a
+                  href={`https://pncp.gov.br/app/editais/${dadosPncp.cnpj}/${dadosPncp.ano}/${dadosPncp.sequencial}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className={buttonClassName({ className: "w-full sm:w-fit" })}
+                >
+                  Ver no PNCP ↗
+                </a>
+              ) : null}
               <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">
                 {oportunidade.tags.map((tag) => (
                   <span

@@ -11,6 +11,7 @@ export type FiltrosOportunidades = {
 
 type OportunidadeRow = {
   id: string;
+  codigo: string;
   titulo: string;
   orgao: string;
   modalidade: string;
@@ -36,6 +37,7 @@ type OportunidadeRow = {
 
 const camposOportunidade = `
   id,
+  codigo,
   titulo,
   orgao,
   modalidade,
@@ -65,6 +67,7 @@ function mapearOportunidade(
 ): Opportunity {
   return {
     id: row.id,
+    codigo: row.codigo,
     titulo: row.titulo,
     orgao: row.orgao,
     modalidade: row.modalidade,

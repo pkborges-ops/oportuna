@@ -18,6 +18,7 @@ export type OpportunityStatus = "aberta" | "em_analise" | "encerrada";
 
 export type Opportunity = {
   id: string;
+  codigo: string;
   titulo: string;
   orgao: string;
   modalidade: string;
