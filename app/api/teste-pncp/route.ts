@@ -24,16 +24,10 @@ export async function GET() {
   }
 
   const dataFinal = new Date();
-  const dataInicial = new Date();
-
-  dataInicial.setUTCDate(
-    dataFinal.getUTCDate() - 7,
-  );
 
   try {
     const resultado =
       await sincronizarOportunidadesPncp({
-        dataInicial: formatarData(dataInicial),
         dataFinal: formatarData(dataFinal),
 
         // 6 = Pregão - Eletrônico
@@ -48,7 +42,6 @@ export async function GET() {
     return NextResponse.json({
       ok: true,
       periodo: {
-        inicio: formatarData(dataInicial),
         fim: formatarData(dataFinal),
       },
       modalidade: "Pregão - Eletrônico",

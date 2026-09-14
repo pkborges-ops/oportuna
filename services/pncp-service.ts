@@ -36,7 +36,8 @@ type RespostaPncp = {
 };
 
 export type FiltrosPncp = {
-  dataInicial: Date | string;
+  /** @deprecated O endpoint de propostas utiliza apenas dataFinal. */
+  dataInicial?: Date | string;
   dataFinal: Date | string;
   codigoModalidadeContratacao: number;
   pagina?: number;
@@ -62,19 +63,13 @@ function formatarDataPncp(data: Date | string) {
 }
 
 export async function listarContratacoesPncp({
-  dataInicial,
   dataFinal,
   codigoModalidadeContratacao,
   pagina = 1,
   uf,
 }: FiltrosPncp) {
   const url = new URL(
-    `${PNCP_BASE_URL}/v1/contratacoes/publicacao`,
-  );
-
-  url.searchParams.set(
-    "dataInicial",
-    formatarDataPncp(dataInicial),
+    `${PNCP_BASE_URL}/v1/contratacoes/proposta`,
   );
 
   url.searchParams.set(
@@ -110,6 +105,16 @@ export async function listarContratacoesPncp({
     throw new Error(
       `Erro ao consultar PNCP: HTTP ${response.status}`,
     );
+  }
+
+  if (response.status === 204) {
+    return {
+      contratacoes: [],
+      pagina,
+      totalPaginas: 0,
+      totalRegistros: 0,
+      paginasRestantes: 0,
+    };
   }
 
   const dados = (await response.json()) as RespostaPncp;

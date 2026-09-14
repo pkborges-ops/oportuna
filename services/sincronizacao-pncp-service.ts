@@ -164,7 +164,6 @@ function transformarContratacao(
 }
 
 export async function sincronizarOportunidadesPncp({
-  dataInicial,
   dataFinal,
   codigoModalidadeContratacao,
   uf,
@@ -176,16 +175,17 @@ export async function sincronizarOportunidadesPncp({
   let consultadas = 0;
   let gravadas = 0;
   let ignoradas = 0;
+  let paginasProcessadas = 0;
 
   while (pagina <= maxPaginas) {
     const resultado = await listarContratacoesPncp({
-      dataInicial,
       dataFinal,
       codigoModalidadeContratacao,
       uf,
       pagina,
     });
 
+    paginasProcessadas += 1;
     consultadas += resultado.contratacoes.length;
 
     const oportunidades = resultado.contratacoes
@@ -234,6 +234,6 @@ export async function sincronizarOportunidadesPncp({
     consultadas,
     gravadas,
     ignoradas,
-    paginasProcessadas: pagina,
+    paginasProcessadas,
   };
 }
