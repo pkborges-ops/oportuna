@@ -31,11 +31,11 @@ export default async function DashboardPage() {
         <div>
           <h2 className="text-2xl font-semibold text-slate-950">Dashboard</h2>
           <p className="mt-1 text-slate-600">
-            Visão consolidada dos perfis, oportunidades e alertas de editais.
+            Visão consolidada dos perfis, oportunidades e alertas.
           </p>
         </div>
         <Link href="/oportunidades" className={buttonClassName()}>
-          Buscar editais
+          Buscar oportunidades
         </Link>
       </section>
 
@@ -60,7 +60,7 @@ export default async function DashboardPage() {
           <CardHeader>
             <CardTitle>Melhor oportunidade do momento</CardTitle>
             <CardDescription>
-              Priorizada pela análise de aderência entre edital e perfil.
+              Priorizada pela análise de aderência entre oportunidade e perfil.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">

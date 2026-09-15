@@ -40,7 +40,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               Radar de oportunidades
             </p>
             <h1 className="mt-3 max-w-lg text-3xl font-semibold leading-tight tracking-normal sm:text-4xl">
-              Encontre editais e transforme boas oportunidades em receita.
+              Encontre oportunidades para vender ao governo.
             </h1>
             <p className="mt-4 max-w-md text-sm leading-6 text-slate-100 sm:text-base">
               Centralize buscas, priorize contratos aderentes e acompanhe prazos
@@ -56,7 +56,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
                 Entrar na {appConfig.name}
               </CardTitle>
               <CardDescription>
-                Acesse seu painel de editais, favoritos e alertas.
+                Acesse seu painel de oportunidades, favoritos e alertas.
               </CardDescription>
             </CardHeader>
             <CardContent className="px-0 pb-0">
