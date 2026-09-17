@@ -16,7 +16,21 @@ export type Profile = {
 
 export type OpportunityStatus = "aberta" | "em_analise" | "encerrada";
 
+export const OPPORTUNITY_ORIGINS = ["PNCP", "SICX", "OUTRA"] as const;
+export type OpportunityOrigin = (typeof OPPORTUNITY_ORIGINS)[number];
+
+export const OPPORTUNITY_TYPES = [
+  "LICITACAO",
+  "CREDENCIAMENTO",
+  "CONTRATACAO_DIRETA",
+  "COMPRA_EXPRESSA",
+  "OUTRO",
+] as const;
+export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
+
 export type Opportunity = {
+  origem: OpportunityOrigin;
+  tipo: OpportunityType;
   id: string;
   codigo: string;
   titulo: string;

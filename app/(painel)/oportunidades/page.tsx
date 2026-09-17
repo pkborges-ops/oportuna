@@ -52,7 +52,7 @@ export default async function OportunidadesPage({
             Oportunidades
           </h2>
           <p className="mt-1 text-slate-600">
-            Busque, filtre e avalie editais com score gerado por IA.
+            Busque, filtre e avalie oportunidades com score gerado por IA.
           </p>
         </div>
         <form
@@ -60,7 +60,7 @@ export default async function OportunidadesPage({
           className="grid w-full gap-3 sm:max-w-2xl sm:grid-cols-[1fr_140px_90px_auto] sm:items-end"
         >
           <Input
-            label="Buscar edital"
+            label="Buscar oportunidade"
             name="busca"
             defaultValue={params.busca ?? ""}
             placeholder="Software, engenharia, licenças..."

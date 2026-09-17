@@ -13,7 +13,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
-import { formatarCnpj, interpretarNumeroControlePncp } from "@/lib/pncp";
+import { obterApresentacaoOrigem } from "@/lib/oportunidades/apresentacao-origem";
 import { buscarAnalisePorPerfil } from "@/services/analises-service";
 import { buscarOportunidadePorId } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
@@ -179,7 +179,7 @@ export default async function DetalheOportunidadePage({
     notFound();
   }
 
-  const dadosPncp = interpretarNumeroControlePncp(oportunidade.codigo);
+  const origem = obterApresentacaoOrigem(oportunidade);
   const perfis = await listarPerfis();
   const perfilSelecionado =
     perfis.find((perfil) => perfil.id === query.perfilId) ?? perfis[0];
@@ -237,7 +237,7 @@ export default async function DetalheOportunidadePage({
         <div className="grid gap-6">
           <Card>
             <CardHeader>
-              <CardTitle>Dados do edital</CardTitle>
+              <CardTitle>Dados da oportunidade</CardTitle>
               <CardDescription>
                 Informacoes principais para qualificacao comercial.
               </CardDescription>
@@ -280,31 +280,23 @@ export default async function DetalheOportunidadePage({
                     {formatarData(oportunidade.dataAbertura)}
                   </p>
                 </div>
-                {dadosPncp ? (
-                  <>
-                    <div>
-                      <p className="text-slate-500">Código PNCP</p>
-                      <p className="break-all font-medium text-slate-950">
-                        {oportunidade.codigo}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-slate-500">CNPJ do órgão</p>
-                      <p className="font-medium text-slate-950">
-                        {formatarCnpj(dadosPncp.cnpj)}
-                      </p>
-                    </div>
-                  </>
-                ) : null}
+                {origem?.campos.map((campo) => (
+                  <div key={campo.label}>
+                    <p className="text-slate-500">{campo.label}</p>
+                    <p className="break-all font-medium text-slate-950">
+                      {campo.valor}
+                    </p>
+                  </div>
+                ))}
               </div>
-              {dadosPncp ? (
+              {origem ? (
                 <a
-                  href={`https://pncp.gov.br/app/editais/${dadosPncp.cnpj}/${dadosPncp.ano}/${dadosPncp.sequencial}`}
+                  href={origem.link.url}
                   target="_blank"
                   rel="noopener noreferrer"
                   className={buttonClassName({ className: "w-full sm:w-fit" })}
                 >
-                  Ver no PNCP ↗
+                  {origem.link.label}
                 </a>
               ) : null}
               <div className="flex flex-wrap gap-2 border-t border-slate-200 pt-4">
@@ -329,7 +321,7 @@ export default async function DetalheOportunidadePage({
               <div>
                 <CardTitle>Analise por IA</CardTitle>
                 <CardDescription>
-                  Resultado inicial para priorizacao do edital.
+                  Resultado inicial para priorização da oportunidade.
                 </CardDescription>
               </div>
               {analise ? (

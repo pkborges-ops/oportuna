@@ -1,4 +1,4 @@
 export const appConfig = {
   name: "Oportuna",
-  description: "IA para encontrar oportunidades em licitações",
+  description: "Encontre oportunidades para vender ao governo com IA.",
 } as const;

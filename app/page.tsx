@@ -31,11 +31,11 @@ export default function Home() {
               {appConfig.description}
             </span>
             <h1 className="mt-6 text-4xl font-semibold tracking-normal text-white sm:text-6xl">
-              Encontre editais com maior chance de aderência ao seu negócio.
+              Encontre oportunidades para vender ao governo com IA.
             </h1>
             <p className="mt-6 max-w-2xl text-lg leading-8 text-slate-300">
               Cadastre perfis de empresa, acompanhe oportunidades, receba
-              alertas por e-mail e use IA para priorizar editais com match
+              alertas por e-mail e use IA para priorizar oportunidades com match
               score, resumo e pontos de atenção.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">

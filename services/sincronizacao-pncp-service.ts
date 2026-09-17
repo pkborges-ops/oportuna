@@ -1,3 +1,4 @@
+import { classificarPncp } from "@/lib/oportunidades/classificar-pncp";
 import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
 import {
   listarContratacoesPncp,
@@ -118,6 +119,8 @@ function transformarContratacao(
 
   return {
     codigo,
+    origem: "PNCP" as const,
+    tipo: classificarPncp(contratacao),
 
     titulo: criarTitulo(contratacao),
 

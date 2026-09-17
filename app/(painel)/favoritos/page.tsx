@@ -27,7 +27,7 @@ export default async function FavoritosPage({ searchParams }: FavoritosPageProps
       <section>
         <h2 className="text-2xl font-semibold text-slate-950">Favoritos</h2>
         <p className="mt-1 text-slate-600">
-          Editais salvos para acompanhamento e decisao comercial.
+          Oportunidades salvas para acompanhamento e decisao comercial.
         </p>
       </section>
 
