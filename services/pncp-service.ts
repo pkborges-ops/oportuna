@@ -74,6 +74,12 @@ export type ContratacaoPncp = {
   valorTotalEstimado?: number;
   modalidadeId?: number;
   modalidadeNome?: string;
+  tipoInstrumentoConvocatorioId?: number | null;
+  tipoInstrumentoConvocatorioNome?: string | null;
+  modoDisputaId?: number | null;
+  modoDisputaNome?: string | null;
+  informacaoComplementar?: string | null;
+  linkSistemaOrigem?: string | null;
   dataPublicacaoPncp?: string;
   dataAberturaProposta?: string;
   dataEncerramentoProposta?: string;
@@ -172,6 +178,10 @@ export async function listarContratacoesPncp({
   }
 
   const dados = JSON.parse(response.corpo) as RespostaPncp;
+  if (!Array.isArray(dados.data) || !Number.isInteger(dados.totalPaginas) ||
+      dados.totalPaginas! < 0 || dados.numeroPagina !== pagina) {
+    throw new Error("Resposta PNCP inválida; preservar checkpoint.");
+  }
 
   return {
     contratacoes: dados.data ?? [],

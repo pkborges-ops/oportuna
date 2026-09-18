@@ -27,24 +27,18 @@ export async function GET(request: NextRequest) {
   try {
     const resultado = await sincronizarOportunidadesPncp({
       dataFinal,
-      codigoModalidadeContratacao: 6,
-      uf: "SC",
-      maxPaginas: 2,
     });
 
     return NextResponse.json({
       ok: true,
       dataExecucao,
-      modalidade: "Pregão - Eletrônico",
-      uf: "SC",
+      modalidade: resultado.modalidade?.nome ?? null,
       resultado,
     });
   } catch {
     // Não expor mensagens de dependências, credenciais ou headers.
     console.error("[pncp-cron] Falha ao sincronizar oportunidades.", {
       dataExecucao,
-      modalidade: 6,
-      uf: "SC",
     });
 
     return NextResponse.json(

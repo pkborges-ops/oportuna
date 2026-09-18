@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import ./tests/register.mjs --test --test-isolation=none tests/*.test.mjs",
     "check:env": "node scripts/validar-ambiente.mjs"
   },
   "dependencies": {

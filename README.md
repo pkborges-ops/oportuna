@@ -170,3 +170,137 @@ revertida antes de nova tentativa.
 `codigo` continua globalmente único e o upsert continua por `codigo`. Antes de
 integrar outra fonte, definir namespace para seus códigos ou revisar a unicidade
 para `(origem, codigo)`, sem mudar os identificadores PNCP existentes.
+
+## Ingestão PNCP nacional em lotes
+
+A rota autenticada `/api/cron/pncp` consulta propostas nacionais sem filtro de UF
+ou perfil de empresa. A seleção comercial é separada da classificação histórica:
+Pregão Eletrônico (6) e Concorrência Eletrônica (4) são `LICITACAO`; Dispensa (8)
+só entra como `CONTRATACAO_DIRETA` com instrumento 2 e modo 4; Credenciamento (12)
+entra como `CREDENCIAMENTO`, sem filtro por SICX. Os credenciamentos considerados
+são os disponibilizados pelo endpoint de propostas, sem exigir encerramento informado.
+
+### Domínios oficiais verificados em 18/09/2026
+
+Consultas GET realizadas diretamente no PNCP, com resposta de sucesso:
+
+- [Modalidades ativas](https://pncp.gov.br/api/pncp/v1/modalidades?statusAtivo=true):
+  6 = Pregão - Eletrônico, 4 = Concorrência - Eletrônica, 8 = Dispensa,
+  12 = Credenciamento (todos ativos).
+- [Instrumentos ativos](https://pncp.gov.br/api/pncp/v1/tipos-instrumentos-convocatorios?statusAtivo=true):
+  2 = Aviso de Contratação Direta; 3 = Ato que autoriza a Contratação Direta;
+  4 = Edital de Chamamento Público.
+- [Modos ativos](https://pncp.gov.br/api/pncp/v1/modos-disputas?statusAtivo=true):
+  4 = Dispensa Com Disputa; 5 = Não se aplica.
+- [Conformidade](https://pncp.gov.br/api/pncp/v1/tipo-instrumento-convocatorio-modo-disputa):
+  confirma instrumento 2 + modo 4, instrumento 3 + modo 5 e instrumento 4 + modo 5.
+
+`ehDispensaEletronicaComDisputa` exige os três IDs 8/2/4. Nomes estruturados,
+quando informados, precisam concordar com instrumento/modo esperados; nomes não
+substituem IDs ausentes. Dados incompletos ou conflitantes são ignorados e contados
+em `ignoradas`. Nenhuma palavra em título/objeto/informação complementar decide
+se uma dispensa é eletrônica. Não há inferência SICX.
+
+O contrato inclui `tipoInstrumentoConvocatorioId`, `tipoInstrumentoConvocatorioNome`,
+`modoDisputaId`, `modoDisputaNome`, `informacaoComplementar`, `linkSistemaOrigem`.
+Os nomes foram conferidos no retorno de contratação documentado na seção 11.5.4 do
+[Manual oficial de Integração v2.6](https://pncp.gov.br/manual/pt-br/latest/singlehtml/).
+O link, quando presente, é salvo em `participacao_url`; ausente/vazio vira `null`.
+`participacao_portal` permanece PNCP. Informação complementar fica disponível no
+contrato de origem; não altera a classificação nem exige coluna adicional.
+
+### Checkpoint e concorrência
+
+Aplicar **manualmente**, após revisão, `supabase/sincronizacao_pncp_checkpoints.sql`
+antes de ativar este código em produção. O arquivo cria apenas uma tabela nova e
+uma função RPC, sem alterar `oportunidades_editais`, índices ou migrations anteriores.
+A tabela usa RLS sem acesso de usuários; tabela e RPC são acessíveis pelo service role.
+
+Cada modalidade tem `pagina_proxima`, `data_final_ciclo`, `ciclo_concluido`,
+`atualizado_em`, `ultima_tentativa_em`, `reserva_token` e `reservado_ate`.
+A RPC escolhe a tentativa mais antiga (nulos primeiro, desempate por ID), com lock
+`FOR UPDATE SKIP LOCKED`. Atualiza a tentativa e reserva por 90 segundos **antes**
+da consulta. Assim, uma modalidade com erro não bloqueia permanentemente as demais.
+A expiração permite recuperar execuções interrompidas. Um token protege a gravação
+contra uma reserva antiga. A data do ciclo fica congelada até a conclusão.
+
+Só após consultar, normalizar e concluir o upsert por `codigo`, o checkpoint é
+atualizado. Uma falha deixa a página pendente; se o upsert já tiver sido confirmado,
+a repetição atualiza os mesmos códigos. Se a confirmação do checkpoint se perder
+na rede, a próxima execução lê o estado persistido: jamais avança sem dados gravados.
+No fim, a página fica 1 e o ciclo concluído; a próxima reserva abre o novo ciclo e
+renova a data final. Duplicatas dentro da página são consolidadas por código.
+
+### Limites, retorno e validação
+
+- **Máximo de uma página/uma modalidade por execução**, sem loop de paginação.
+  Até 19,5s de PNCP (3 tentativas de 6s + esperas de 0,5s/1s), mais até 15s para
+  reserva, upsert e checkpoint (5s por operação). Há margem no `maxDuration = 60`.
+  Não há cancelamento de página por orçamento global; os timeouts das dependências
+  continuam protegendo chamadas individuais. O custo local de normalização é adicional.
+- O JSON mantém `ok`, `dataExecucao`, `modalidade` e `resultado`; este último contém
+  modalidade (ID/nome), `paginaInicial`, `paginaFinal`, `paginasProcessadas`,
+  `consultadas`, `gravadas`, `ignoradas`, `proximaPagina`, `cicloConcluido`, `ocupado`.
+  `gravadas` conta códigos submetidos com sucesso, inclusive atualizações;
+  `ignoradas` inclui inválidas, fora do escopo e duplicatas na página.
+  Sem reserva disponível retorna zero páginas e `ocupado: true`.
+- O PNCP é disparado pelo GitHub Actions a cada 15 minutos (detalhes abaixo).
+  O cron nativo da Vercel continua apenas para alertas, diariamente às 11:00 UTC
+  (`0 11 * * *`).
+- Paginação PNCP é dinâmica: propostas podem entrar/sair durante um ciclo. Congelar
+  a data final não cria um snapshot; ciclos posteriores recomeçam da página 1, mas
+  não garantem recuperação de oportunidades que já saíram da janela do endpoint.
+- Consultas reais de propostas e Swagger expiraram durante a validação de 18/09/2026.
+  Domínios foram verificados ao vivo; não foi possível validar um payload real de
+  propostas nesta sessão. Revalidar essa integração ao aplicar a migration.
+- A migration não foi executada. Os testes usam doubles de PNCP/Supabase; não
+  substituem validação do SQL/RLS/concorrência em um banco de homologação.
+
+Testes: Node.js 22.15+ ou 24 (loader com `registerHooks`) e dependências instaladas.
+Executar `npm test`, `npm run lint`, `npx tsc --noEmit` e `git diff --check`.
+Nenhum teste acessa produção ou executa migrations.
+
+### Agendamento PNCP pelo GitHub Actions
+
+O workflow `.github/workflows/pncp-sync.yml` chama
+`https://oportuna-two.vercel.app/api/cron/pncp` nos minutos 7, 22, 37 e 52 de cada
+hora UTC (`7,22,37,52 * * * *`) e permite disparo manual por `workflow_dispatch`.
+Cada execução processa uma modalidade/página: cerca de **96 execuções por dia**,
+ou aproximadamente **24 tentativas/páginas por modalidade por dia**, considerando
+quatro modalidades. Falhas, conclusão dos ciclos e atrasos do agendador afetam esses
+números; não há garantia de disponibilidade contínua do PNCP.
+
+Cadastrar o **repository secret `CRON_SECRET`** em Settings → Secrets and variables
+→ Actions, com o mesmo valor de `CRON_SECRET` na produção Vercel. O workflow envia
+`Authorization: Bearer ...` via variável de ambiente, sem imprimir o secret ou o
+corpo da resposta. Secret ausente faz a execução falhar antes da chamada.
+
+O curl tem limite total de 70 segundos e conexão de 10 segundos, sem retries
+adicionais. O job tem limite de dois minutos. A concorrência usa um grupo fixo
+de produção, compartilhado entre disparos agendados e manuais, sem cancelar a
+execução em andamento. Não há checkout, build, dependências ou acesso ao banco.
+A migration de checkpoints continua **manual e nunca é executada pelo workflow**.
+
+- HTTP 200: sucesso.
+- HTTP 5xx ou timeout/falha de rede: warning e término sem erro; o próximo disparo
+  retoma o estado persistido. Quando a consulta externa PNCP falha, o endpoint não
+  avança o checkpoint. Um timeout entre Actions e Vercel não comprova rollback:
+  o servidor pode ter concluído o lote; o workflow não altera o checkpoint.
+- HTTP 4xx (incluindo 401/403): falha para sinalizar autorização/configuração.
+  Outros status inesperados, inclusive redirects, também falham.
+
+**Ativação:** o GitHub executa `schedule` apenas na branch padrão. O arquivo precisa
+estar nessa branch também para disponibilizar `workflow_dispatch`. O push isolado
+em `feat/pncp-nacional` não ativa o agendamento. A produção precisa conter a versão
+com checkpoints e a migration deve ter sido aplicada manualmente antes da ativação.
+O agendador pode atrasar ou perder disparos; em repositórios públicos, agendas podem
+ser desabilitadas após 60 dias sem atividade.
+[Referência oficial de eventos do GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+
+**Custo:** usa somente o runner Linux padrão `ubuntu-latest`, sem serviços pagos
+adicionais. Runners padrão são gratuitos em repositórios públicos; em privados,
+consomem a franquia do plano e podem gerar cobrança excedente. Para manter custo
+adicional zero em um repositório privado, conferir a franquia e configurar um
+orçamento que bloqueie uso excedente antes da ativação; atingir esse limite pode
+interromper os disparos. Este workflow não altera configurações de faturamento.
+[Referência oficial de cobrança](https://docs.github.com/en/billing/concepts/product-billing/github-actions).

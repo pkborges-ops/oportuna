@@ -1,241 +1,87 @@
-import { classificarPncp } from "@/lib/oportunidades/classificar-pncp";
-import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
-import {
-  listarContratacoesPncp,
-  type ContratacaoPncp,
-  type FiltrosPncp,
-} from "@/services/pncp-service";
+import { transformarContratacao } from "@/lib/oportunidades/normalizar-pncp";
+import { listarContratacoesPncp } from "@/services/pncp-service";
+import type { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
 
-type StatusOportunidade =
-  | "aberta"
-  | "em_analise"
-  | "encerrada";
-
-type ParametrosSincronizacao = Omit<FiltrosPncp, "pagina"> & {
-  maxPaginas?: number;
+export type CheckpointPncp = {
+  modalidade_id: number;
+  modalidade_nome: string;
+  pagina_proxima: number;
+  data_final_ciclo: string;
+  ciclo_concluido: boolean;
+  reserva_token: string;
 };
 
-function extrairData(valor?: string) {
-  if (!valor) {
-    return undefined;
-  }
+export type RepositorioPncp = {
+  reservar: (dataFinal: string) => Promise<CheckpointPncp | null>;
+  gravar: (dados: NonNullable<ReturnType<typeof transformarContratacao>>[]) => Promise<void>;
+  concluir: (checkpoint: CheckpointPncp, proximaPagina: number, concluido: boolean) => Promise<void>;
+};
 
-  return valor.slice(0, 10);
-}
-
-function obterValor(valor?: number) {
-  const numero = Number(valor ?? 0);
-
-  return Number.isFinite(numero) ? numero : 0;
-}
-
-function obterStatus(
-  contratacao: ContratacaoPncp,
-): StatusOportunidade {
-  const situacao =
-    contratacao.situacaoCompraNome?.toLowerCase() ?? "";
-
-  const situacoesEncerradas = [
-    "encerr",
-    "homolog",
-    "adjudic",
-    "revog",
-    "anul",
-    "desert",
-    "fracass",
-    "cancel",
-  ];
-
-  if (
-    situacoesEncerradas.some((termo) =>
-      situacao.includes(termo),
-    )
-  ) {
-    return "encerrada";
-  }
-
-  const encerramento = contratacao.dataEncerramentoProposta;
-
-  if (encerramento) {
-    const dataEncerramento = new Date(encerramento);
-
-    if (
-      !Number.isNaN(dataEncerramento.getTime()) &&
-      dataEncerramento.getTime() < Date.now()
-    ) {
-      return "encerrada";
-    }
-  }
-
-  return "aberta";
-}
-
-function criarTitulo(contratacao: ContratacaoPncp) {
-  const modalidade =
-    contratacao.modalidadeNome ?? "Contratação";
-
-  const numero = contratacao.numeroCompra
-    ? String(contratacao.numeroCompra)
-    : undefined;
-
-  const ano = contratacao.anoCompra;
-
-  if (numero && ano) {
-    return `${modalidade} ${numero}/${ano}`;
-  }
-
-  if (numero) {
-    return `${modalidade} ${numero}`;
-  }
-
-  return modalidade;
-}
-
-function transformarContratacao(
-  contratacao: ContratacaoPncp,
+// Uma página: PNCP <= 19,5s + três operações de banco <= 5s cada.
+// A reserva expira sozinha; nenhuma gravação extra é necessária em caso de falha.
+export async function processarLotePncp(
+  dataFinal: string,
+  repositorio: RepositorioPncp,
+  consultar = listarContratacoesPncp,
 ) {
-  const codigo = contratacao.numeroControlePNCP?.trim();
+  const checkpoint = await repositorio.reservar(dataFinal);
+  if (!checkpoint) return { modalidade: null, paginaInicial: null, paginaFinal: null,
+    paginasProcessadas: 0, consultadas: 0, gravadas: 0, ignoradas: 0,
+    proximaPagina: null, cicloConcluido: false, ocupado: true };
 
-  const dataPublicacao = extrairData(
-    contratacao.dataPublicacaoPncp,
-  );
-
-  if (!codigo || !dataPublicacao) {
-    return null;
+  const pagina = checkpoint.pagina_proxima;
+  const resultado = await consultar({ dataFinal: checkpoint.data_final_ciclo,
+    codigoModalidadeContratacao: checkpoint.modalidade_id, pagina });
+  const normalizadas = resultado.contratacoes.map((c) =>
+    c.modalidadeId === checkpoint.modalidade_id ? transformarContratacao(c) : null,
+  ).filter((c): c is NonNullable<typeof c> => c !== null);
+  // Evita erro de ON CONFLICT se o próprio PNCP repetir um código na mesma página.
+  const oportunidades = [...new Map(normalizadas.map((c) => [c.codigo, c])).values()];
+  if (oportunidades.length) await repositorio.gravar(oportunidades);
+  const cicloConcluido = pagina >= resultado.totalPaginas;
+  // Página vazia antes do fim não encerra o ciclo silenciosamente.
+  if (!resultado.contratacoes.length && !cicloConcluido) {
+    throw new Error("Página PNCP vazia antes do fim; preservar checkpoint.");
   }
+  const proximaPagina = cicloConcluido ? 1 : pagina + 1;
+  await repositorio.concluir(checkpoint, proximaPagina, cicloConcluido);
+  return { modalidade: { id: checkpoint.modalidade_id, nome: checkpoint.modalidade_nome },
+    paginaInicial: pagina, paginaFinal: pagina, paginasProcessadas: 1,
+    consultadas: resultado.contratacoes.length, gravadas: oportunidades.length,
+    ignoradas: resultado.contratacoes.length - oportunidades.length,
+    proximaPagina, cicloConcluido, ocupado: false };
+}
 
-  const dataAbertura =
-    extrairData(contratacao.dataAberturaProposta) ??
-    dataPublicacao;
-
-  const uf =
-    contratacao.unidadeOrgao?.ufSigla
-      ?.trim()
-      .toUpperCase() || "NI";
-
-  const modalidade =
-    contratacao.modalidadeNome ??
-    "Modalidade não informada";
-
+export function criarRepositorioPncp(
+  supabase: ReturnType<typeof criarClienteSupabaseAdmin>,
+): RepositorioPncp {
+  const timeout = () => AbortSignal.timeout(5_000);
   return {
-    codigo,
-    origem: "PNCP" as const,
-    tipo: classificarPncp(contratacao),
-
-    titulo: criarTitulo(contratacao),
-
-    orgao:
-      contratacao.orgaoEntidade?.razaoSocial ??
-      contratacao.unidadeOrgao?.nomeUnidade ??
-      "Órgão não informado",
-
-    modalidade,
-
-    uf: uf.slice(0, 2),
-
-    cidade:
-      contratacao.unidadeOrgao?.municipioNome ??
-      "Não informada",
-
-    objeto:
-      contratacao.objetoCompra ??
-      "Objeto não informado",
-
-    valor_estimado: obterValor(
-      contratacao.valorTotalEstimado,
-    ),
-
-    data_publicacao: dataPublicacao,
-
-    data_abertura: dataAbertura,
-
-    status: obterStatus(contratacao),
-
-    tags: [modalidade],
-
-    participacao_portal: "PNCP",
-
-    participacao_prazo_limite:
-      contratacao.dataEncerramentoProposta ?? null,
-
-    participacao_observacoes:
-      contratacao.processo
-        ? `Processo ${contratacao.processo}`
-        : null,
+    async reservar(data) {
+      const { data: linhas, error } = await supabase.rpc("reservar_lote_pncp", {
+        nova_data_final: data,
+      }).abortSignal(timeout());
+      if (error) throw new Error("Falha ao reservar checkpoint PNCP.");
+      return (linhas?.[0] as CheckpointPncp | undefined) ?? null;
+    },
+    async gravar(dados) {
+      const { error } = await supabase.from("oportunidades_editais")
+        .upsert(dados, { onConflict: "codigo" }).abortSignal(timeout());
+      if (error) throw new Error("Falha ao salvar oportunidades PNCP.");
+    },
+    async concluir(checkpoint, pagina, concluido) {
+      const { data, error } = await supabase.from("sincronizacao_pncp_checkpoints")
+        .update({ pagina_proxima: pagina, ciclo_concluido: concluido,
+          atualizado_em: new Date().toISOString(), reserva_token: null, reservado_ate: null })
+        .eq("modalidade_id", checkpoint.modalidade_id)
+        .eq("reserva_token", checkpoint.reserva_token)
+        .select("modalidade_id").abortSignal(timeout());
+      if (error || data?.length !== 1) throw new Error("Falha ao salvar checkpoint PNCP.");
+    },
   };
 }
 
-export async function sincronizarOportunidadesPncp({
-  dataFinal,
-  codigoModalidadeContratacao,
-  uf,
-  maxPaginas = 20,
-}: ParametrosSincronizacao) {
-  const supabase = criarClienteSupabaseAdmin();
-
-  let pagina = 1;
-  let consultadas = 0;
-  let gravadas = 0;
-  let ignoradas = 0;
-  let paginasProcessadas = 0;
-
-  while (pagina <= maxPaginas) {
-    const resultado = await listarContratacoesPncp({
-      dataFinal,
-      codigoModalidadeContratacao,
-      uf,
-      pagina,
-    });
-
-    paginasProcessadas += 1;
-    consultadas += resultado.contratacoes.length;
-
-    const oportunidades = resultado.contratacoes
-      .map(transformarContratacao)
-      .filter(
-        (
-          oportunidade,
-        ): oportunidade is NonNullable<
-          ReturnType<typeof transformarContratacao>
-        > => Boolean(oportunidade),
-      );
-
-    ignoradas +=
-      resultado.contratacoes.length -
-      oportunidades.length;
-
-    if (oportunidades.length > 0) {
-      const { error } = await supabase
-        .from("oportunidades_editais")
-        .upsert(oportunidades, {
-          onConflict: "codigo",
-        });
-
-      if (error) {
-        throw new Error(
-          `Erro ao salvar oportunidades do PNCP: ${error.message}`,
-        );
-      }
-
-      gravadas += oportunidades.length;
-    }
-
-    const totalPaginas = resultado.totalPaginas ?? pagina;
-
-    if (
-      pagina >= totalPaginas ||
-      resultado.contratacoes.length === 0
-    ) {
-      break;
-    }
-
-    pagina += 1;
-  }
-
-  return {
-    consultadas,
-    gravadas,
-    ignoradas,
-    paginasProcessadas,
-  };
+export async function sincronizarOportunidadesPncp({ dataFinal }: { dataFinal: string }) {
+  const { criarClienteSupabaseAdmin } = await import("@/lib/supabase/admin");
+  return processarLotePncp(dataFinal, criarRepositorioPncp(criarClienteSupabaseAdmin()));
 }
