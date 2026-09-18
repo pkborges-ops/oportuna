@@ -60,13 +60,7 @@ export default async function FavoritosPage({ searchParams }: FavoritosPageProps
               <p className="text-sm leading-6 text-slate-600">
                 {oportunidade.objeto}
               </p>
-              <div className="grid gap-3 text-sm sm:grid-cols-3">
-                <div>
-                  <p className="text-slate-500">Match</p>
-                  <p className="font-semibold text-cyan-900">
-                    {oportunidade.analise?.score}%
-                  </p>
-                </div>
+              <div className="grid gap-3 text-sm sm:grid-cols-2">
                 <div>
                   <p className="text-slate-500">Valor</p>
                   <p className="font-medium text-slate-950">
