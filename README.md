@@ -244,10 +244,9 @@ renova a data final. Duplicatas dentro da página são consolidadas por código.
   `gravadas` conta códigos submetidos com sucesso, inclusive atualizações;
   `ignoradas` inclui inválidas, fora do escopo e duplicatas na página.
   Sem reserva disponível retorna zero páginas e `ocupado: true`.
-- O cron permanece diário às 09:00 UTC. Isso significa aproximadamente uma página
-  por modalidade a cada quatro dias. **A frequência atual é insuficiente para
-  cobertura nacional tempestiva**; revisar frequência/capacidade antes do uso
-  comercial, conforme o plano Vercel. Esta entrega não muda agendamento ou alertas.
+- O PNCP é disparado pelo GitHub Actions a cada 15 minutos (detalhes abaixo).
+  O cron nativo da Vercel continua apenas para alertas, diariamente às 11:00 UTC
+  (`0 11 * * *`).
 - Paginação PNCP é dinâmica: propostas podem entrar/sair durante um ciclo. Congelar
   a data final não cria um snapshot; ciclos posteriores recomeçam da página 1, mas
   não garantem recuperação de oportunidades que já saíram da janela do endpoint.
@@ -260,3 +259,48 @@ renova a data final. Duplicatas dentro da página são consolidadas por código.
 Testes: Node.js 22.15+ ou 24 (loader com `registerHooks`) e dependências instaladas.
 Executar `npm test`, `npm run lint`, `npx tsc --noEmit` e `git diff --check`.
 Nenhum teste acessa produção ou executa migrations.
+
+### Agendamento PNCP pelo GitHub Actions
+
+O workflow `.github/workflows/pncp-sync.yml` chama
+`https://oportuna-two.vercel.app/api/cron/pncp` nos minutos 7, 22, 37 e 52 de cada
+hora UTC (`7,22,37,52 * * * *`) e permite disparo manual por `workflow_dispatch`.
+Cada execução processa uma modalidade/página: cerca de **96 execuções por dia**,
+ou aproximadamente **24 tentativas/páginas por modalidade por dia**, considerando
+quatro modalidades. Falhas, conclusão dos ciclos e atrasos do agendador afetam esses
+números; não há garantia de disponibilidade contínua do PNCP.
+
+Cadastrar o **repository secret `CRON_SECRET`** em Settings → Secrets and variables
+→ Actions, com o mesmo valor de `CRON_SECRET` na produção Vercel. O workflow envia
+`Authorization: Bearer ...` via variável de ambiente, sem imprimir o secret ou o
+corpo da resposta. Secret ausente faz a execução falhar antes da chamada.
+
+O curl tem limite total de 70 segundos e conexão de 10 segundos, sem retries
+adicionais. O job tem limite de dois minutos. A concorrência usa um grupo fixo
+de produção, compartilhado entre disparos agendados e manuais, sem cancelar a
+execução em andamento. Não há checkout, build, dependências ou acesso ao banco.
+A migration de checkpoints continua **manual e nunca é executada pelo workflow**.
+
+- HTTP 200: sucesso.
+- HTTP 5xx ou timeout/falha de rede: warning e término sem erro; o próximo disparo
+  retoma o estado persistido. Quando a consulta externa PNCP falha, o endpoint não
+  avança o checkpoint. Um timeout entre Actions e Vercel não comprova rollback:
+  o servidor pode ter concluído o lote; o workflow não altera o checkpoint.
+- HTTP 4xx (incluindo 401/403): falha para sinalizar autorização/configuração.
+  Outros status inesperados, inclusive redirects, também falham.
+
+**Ativação:** o GitHub executa `schedule` apenas na branch padrão. O arquivo precisa
+estar nessa branch também para disponibilizar `workflow_dispatch`. O push isolado
+em `feat/pncp-nacional` não ativa o agendamento. A produção precisa conter a versão
+com checkpoints e a migration deve ter sido aplicada manualmente antes da ativação.
+O agendador pode atrasar ou perder disparos; em repositórios públicos, agendas podem
+ser desabilitadas após 60 dias sem atividade.
+[Referência oficial de eventos do GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows).
+
+**Custo:** usa somente o runner Linux padrão `ubuntu-latest`, sem serviços pagos
+adicionais. Runners padrão são gratuitos em repositórios públicos; em privados,
+consomem a franquia do plano e podem gerar cobrança excedente. Para manter custo
+adicional zero em um repositório privado, conferir a franquia e configurar um
+orçamento que bloqueie uso excedente antes da ativação; atingir esse limite pode
+interromper os disparos. Este workflow não altera configurações de faturamento.
+[Referência oficial de cobrança](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
