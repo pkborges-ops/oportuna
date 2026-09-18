@@ -170,3 +170,93 @@ revertida antes de nova tentativa.
 `codigo` continua globalmente único e o upsert continua por `codigo`. Antes de
 integrar outra fonte, definir namespace para seus códigos ou revisar a unicidade
 para `(origem, codigo)`, sem mudar os identificadores PNCP existentes.
+
+## Ingestão PNCP nacional em lotes
+
+A rota autenticada `/api/cron/pncp` consulta propostas nacionais sem filtro de UF
+ou perfil de empresa. A seleção comercial é separada da classificação histórica:
+Pregão Eletrônico (6) e Concorrência Eletrônica (4) são `LICITACAO`; Dispensa (8)
+só entra como `CONTRATACAO_DIRETA` com instrumento 2 e modo 4; Credenciamento (12)
+entra como `CREDENCIAMENTO`, sem filtro por SICX. Os credenciamentos considerados
+são os disponibilizados pelo endpoint de propostas, sem exigir encerramento informado.
+
+### Domínios oficiais verificados em 18/09/2026
+
+Consultas GET realizadas diretamente no PNCP, com resposta de sucesso:
+
+- [Modalidades ativas](https://pncp.gov.br/api/pncp/v1/modalidades?statusAtivo=true):
+  6 = Pregão - Eletrônico, 4 = Concorrência - Eletrônica, 8 = Dispensa,
+  12 = Credenciamento (todos ativos).
+- [Instrumentos ativos](https://pncp.gov.br/api/pncp/v1/tipos-instrumentos-convocatorios?statusAtivo=true):
+  2 = Aviso de Contratação Direta; 3 = Ato que autoriza a Contratação Direta;
+  4 = Edital de Chamamento Público.
+- [Modos ativos](https://pncp.gov.br/api/pncp/v1/modos-disputas?statusAtivo=true):
+  4 = Dispensa Com Disputa; 5 = Não se aplica.
+- [Conformidade](https://pncp.gov.br/api/pncp/v1/tipo-instrumento-convocatorio-modo-disputa):
+  confirma instrumento 2 + modo 4, instrumento 3 + modo 5 e instrumento 4 + modo 5.
+
+`ehDispensaEletronicaComDisputa` exige os três IDs 8/2/4. Nomes estruturados,
+quando informados, precisam concordar com instrumento/modo esperados; nomes não
+substituem IDs ausentes. Dados incompletos ou conflitantes são ignorados e contados
+em `ignoradas`. Nenhuma palavra em título/objeto/informação complementar decide
+se uma dispensa é eletrônica. Não há inferência SICX.
+
+O contrato inclui `tipoInstrumentoConvocatorioId`, `tipoInstrumentoConvocatorioNome`,
+`modoDisputaId`, `modoDisputaNome`, `informacaoComplementar`, `linkSistemaOrigem`.
+Os nomes foram conferidos no retorno de contratação documentado na seção 11.5.4 do
+[Manual oficial de Integração v2.6](https://pncp.gov.br/manual/pt-br/latest/singlehtml/).
+O link, quando presente, é salvo em `participacao_url`; ausente/vazio vira `null`.
+`participacao_portal` permanece PNCP. Informação complementar fica disponível no
+contrato de origem; não altera a classificação nem exige coluna adicional.
+
+### Checkpoint e concorrência
+
+Aplicar **manualmente**, após revisão, `supabase/sincronizacao_pncp_checkpoints.sql`
+antes de ativar este código em produção. O arquivo cria apenas uma tabela nova e
+uma função RPC, sem alterar `oportunidades_editais`, índices ou migrations anteriores.
+A tabela usa RLS sem acesso de usuários; tabela e RPC são acessíveis pelo service role.
+
+Cada modalidade tem `pagina_proxima`, `data_final_ciclo`, `ciclo_concluido`,
+`atualizado_em`, `ultima_tentativa_em`, `reserva_token` e `reservado_ate`.
+A RPC escolhe a tentativa mais antiga (nulos primeiro, desempate por ID), com lock
+`FOR UPDATE SKIP LOCKED`. Atualiza a tentativa e reserva por 90 segundos **antes**
+da consulta. Assim, uma modalidade com erro não bloqueia permanentemente as demais.
+A expiração permite recuperar execuções interrompidas. Um token protege a gravação
+contra uma reserva antiga. A data do ciclo fica congelada até a conclusão.
+
+Só após consultar, normalizar e concluir o upsert por `codigo`, o checkpoint é
+atualizado. Uma falha deixa a página pendente; se o upsert já tiver sido confirmado,
+a repetição atualiza os mesmos códigos. Se a confirmação do checkpoint se perder
+na rede, a próxima execução lê o estado persistido: jamais avança sem dados gravados.
+No fim, a página fica 1 e o ciclo concluído; a próxima reserva abre o novo ciclo e
+renova a data final. Duplicatas dentro da página são consolidadas por código.
+
+### Limites, retorno e validação
+
+- **Máximo de uma página/uma modalidade por execução**, sem loop de paginação.
+  Até 19,5s de PNCP (3 tentativas de 6s + esperas de 0,5s/1s), mais até 15s para
+  reserva, upsert e checkpoint (5s por operação). Há margem no `maxDuration = 60`.
+  Não há cancelamento de página por orçamento global; os timeouts das dependências
+  continuam protegendo chamadas individuais. O custo local de normalização é adicional.
+- O JSON mantém `ok`, `dataExecucao`, `modalidade` e `resultado`; este último contém
+  modalidade (ID/nome), `paginaInicial`, `paginaFinal`, `paginasProcessadas`,
+  `consultadas`, `gravadas`, `ignoradas`, `proximaPagina`, `cicloConcluido`, `ocupado`.
+  `gravadas` conta códigos submetidos com sucesso, inclusive atualizações;
+  `ignoradas` inclui inválidas, fora do escopo e duplicatas na página.
+  Sem reserva disponível retorna zero páginas e `ocupado: true`.
+- O cron permanece diário às 09:00 UTC. Isso significa aproximadamente uma página
+  por modalidade a cada quatro dias. **A frequência atual é insuficiente para
+  cobertura nacional tempestiva**; revisar frequência/capacidade antes do uso
+  comercial, conforme o plano Vercel. Esta entrega não muda agendamento ou alertas.
+- Paginação PNCP é dinâmica: propostas podem entrar/sair durante um ciclo. Congelar
+  a data final não cria um snapshot; ciclos posteriores recomeçam da página 1, mas
+  não garantem recuperação de oportunidades que já saíram da janela do endpoint.
+- Consultas reais de propostas e Swagger expiraram durante a validação de 18/09/2026.
+  Domínios foram verificados ao vivo; não foi possível validar um payload real de
+  propostas nesta sessão. Revalidar essa integração ao aplicar a migration.
+- A migration não foi executada. Os testes usam doubles de PNCP/Supabase; não
+  substituem validação do SQL/RLS/concorrência em um banco de homologação.
+
+Testes: Node.js 22.15+ ou 24 (loader com `registerHooks`) e dependências instaladas.
+Executar `npm test`, `npm run lint`, `npx tsc --noEmit` e `git diff --check`.
+Nenhum teste acessa produção ou executa migrations.
