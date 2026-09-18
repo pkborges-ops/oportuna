@@ -2,6 +2,8 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { sincronizarOportunidadesPncp } from "@/services/sincronizacao-pncp-service";
 
+export const maxDuration = 60;
+
 function requisicaoAutorizada(request: NextRequest) {
   const segredo = process.env.CRON_SECRET;
 

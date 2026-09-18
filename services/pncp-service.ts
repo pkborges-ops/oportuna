@@ -1,26 +1,48 @@
 const PNCP_BASE_URL = "https://pncp.gov.br/api/consulta";
 const MAX_TENTATIVAS = 3;
+const TIMEOUT_TENTATIVA_MS = 6_000;
 
-async function consultarPncp(url: URL): Promise<Response> {
+async function consultarPncp(url: URL): Promise<{ status: number; corpo: string }> {
   for (let tentativa = 1; tentativa <= MAX_TENTATIVAS; tentativa += 1) {
     let response: Response | undefined;
+    let falhaTransporte = false;
+    let timeout = false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      timeout = true;
+      controller.abort();
+    }, TIMEOUT_TENTATIVA_MS);
 
     try {
       response = await fetch(url, {
         headers: { Accept: "application/json" },
         cache: "no-store",
+        signal: controller.signal,
       });
+
+      if (response.ok) {
+        // Manter o timeout ativo também durante a leitura do corpo.
+        const corpo = response.status === 204 ? "" : await response.text();
+        return { status: response.status, corpo };
+      }
     } catch {
       // Não registrar o erro bruto: ele pode conter dados da requisição.
+      falhaTransporte = true;
+    } finally {
+      clearTimeout(timer);
+      // Liberar a conexão, inclusive em falhas durante a leitura do corpo.
+      if (falhaTransporte || (response && !response.ok)) {
+        controller.abort();
+      }
     }
 
-    if (response?.ok) {
-      return response;
-    }
-
-    const motivo = response ? `HTTP ${response.status}` : "erro de rede";
+    const motivo = falhaTransporte
+      ? timeout
+        ? "timeout da chamada"
+        : "erro de rede"
+      : `HTTP ${response?.status}`;
     const podeRepetir =
-      !response || response.status === 429 || response.status >= 500;
+      falhaTransporte || response?.status === 429 || (response?.status ?? 0) >= 500;
     const repetir = podeRepetir && tentativa < MAX_TENTATIVAS;
     const esperaMs = repetir ? 500 * tentativa : 0;
 
@@ -32,9 +54,6 @@ async function consultarPncp(url: URL): Promise<Response> {
       repetir,
       esperaMs,
     });
-
-    // Liberar o corpo da resposta antes de tentar novamente.
-    await response?.body?.cancel().catch(() => undefined);
 
     if (!repetir) {
       throw new Error(`Erro ao consultar PNCP: ${motivo}`);
@@ -152,7 +171,7 @@ export async function listarContratacoesPncp({
     };
   }
 
-  const dados = (await response.json()) as RespostaPncp;
+  const dados = JSON.parse(response.corpo) as RespostaPncp;
 
   return {
     contratacoes: dados.data ?? [],
