@@ -350,11 +350,19 @@ Vários ativos exigem escolha explícita; perfis inativos podem ser escolhidos
 explicitamente e são identificados no seletor. Uma seleção vazia desativa o matching.
 Sem perfis, há um link para cadastro; sem seleção, nenhum score é exibido.
 
-Com perfil, ordena score decrescente e desempata por data de abertura crescente
-(datas ausentes/inválidas ficam depois das válidas). `aderencia=alta|media|baixa`
+A ordenação padrão `recomendadas` prioriza abertas, em análise e encerradas,
+nessa ordem; dentro do status, usa score decrescente (com perfil) e publicação
+mais recente como desempate. Sem perfil, usa status e publicação.
+O seletor `ordenacao` também oferece `mais_novas` (abertas/em análise antes de
+encerradas, publicação decrescente), `maior_aderencia` (só com perfil: score
+decrescente, abertas/em análise antes de encerradas no empate) e `prazo_proximo`
+(abertas/em análise antes de encerradas, prazo de participação crescente com
+fallback para abertura). Datas ausentes/inválidas ficam depois das válidas.
+Essas regras alteram somente a apresentação, nunca a fórmula do score.
+“Limpar filtros” preserva o perfil e restaura a ordenação padrão. `aderencia=alta|media|baixa`
 filtra apenas com perfil selecionado. Busca, status e UF continuam sendo filtros
 independentes e explícitos. Favoritos e links para os detalhes preservam
-`perfilId`, `busca`, `status`, `uf` e `aderencia` quando aplicáveis.
+`perfilId`, `busca`, `status`, `uf`, `aderencia` e `ordenacao` quando aplicáveis.
 
 A análise por IA continua **manual**, acionada pelo botão existente e persistida
 por usuário/oportunidade/perfil. Abrir lista/detalhes ou calcular aderência não

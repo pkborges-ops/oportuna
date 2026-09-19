@@ -1,3 +1,7 @@
+import {
+  ORDENACOES,
+  resolverOrdenacao,
+} from "@/lib/matching/ordenar-oportunidades";
 import Link from "next/link";
 
 import { alternarFavorito } from "@/app/(painel)/oportunidades/actions";
@@ -18,6 +22,7 @@ import {
   MotivosAderencia,
 } from "@/components/oportunidades/aderencia";
 import {
+  destinoLimparFiltros,
   lerContexto,
   montarDestino,
   prepararListagem,
@@ -45,17 +50,19 @@ export default async function OportunidadesPage({
     ...params,
     perfilId: perfil?.id ?? "",
     aderencia: perfil ? params.aderencia : undefined,
+    ordenacao: resolverOrdenacao(params.ordenacao, Boolean(perfil)),
   };
   const resultados = prepararListagem(
     oportunidades,
     perfil,
     contexto.aderencia,
+    contexto.ordenacao,
   );
   const destino = montarDestino(contexto);
 
   return (
     <div className="grid gap-6">
-      <section className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <section className="grid gap-6">
         <div>
           <h2 className="text-2xl font-semibold text-slate-950">
             Oportunidades
@@ -65,11 +72,8 @@ export default async function OportunidadesPage({
             sua empresa.
           </p>
         </div>
-        <form
-          action="/oportunidades"
-          className="grid w-full gap-3 sm:max-w-3xl sm:grid-cols-2 sm:items-end"
-        >
-          <label className="grid gap-2 text-sm font-medium text-slate-700 sm:col-span-2">
+        <form action="/oportunidades" className="grid gap-5">
+          <label className="grid w-full gap-2 text-sm font-medium text-slate-700 lg:max-w-2xl">
             <span>Perfil da empresa</span>
             <select
               name="perfilId"
@@ -85,56 +89,86 @@ export default async function OportunidadesPage({
               ))}
             </select>
           </label>
-          {perfil ? (
-            <label className="grid gap-2 text-sm font-medium text-slate-700">
-              <span>Aderência</span>
+          <div className="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 sm:grid-cols-2 lg:grid-cols-12 lg:items-end">
+            <div className="sm:col-span-2 lg:col-span-4">
+              <Input
+                label="Buscar oportunidade"
+                name="busca"
+                defaultValue={params.busca ?? ""}
+                placeholder="Software, engenharia, licenças..."
+              />
+            </div>
+            <label className="grid gap-2 text-sm font-medium text-slate-700 lg:col-span-2">
+              <span>Status</span>
               <select
-                name="aderencia"
+                name="status"
                 className={campoSelect}
-                defaultValue={contexto.aderencia ?? ""}
+                defaultValue={params.status ?? ""}
               >
-                <option value="">Todas</option>
-                <option value="alta">Alta (70–100)</option>
-                <option value="media">Média (40–69)</option>
-                <option value="baixa">Baixa (0–39)</option>
+                <option value="">Todos</option>
+                <option value="aberta">Aberta</option>
+                <option value="em_analise">Em análise</option>
+                <option value="encerrada">Encerrada</option>
               </select>
             </label>
-          ) : null}
-          <Input
-            label="Buscar oportunidade"
-            name="busca"
-            defaultValue={params.busca ?? ""}
-            placeholder="Software, engenharia, licenças..."
-          />
-          <label className="grid gap-2 text-sm font-medium text-slate-700">
-            <span>Status</span>
-            <select
-              name="status"
-              className={campoSelect}
-              defaultValue={params.status ?? ""}
-            >
-              <option value="">Todos</option>
-              <option value="aberta">Aberta</option>
-              <option value="em_analise">Em análise</option>
-              <option value="encerrada">Encerrada</option>
-            </select>
-          </label>
-          <Input
-            label="UF"
-            name="uf"
-            defaultValue={params.uf ?? ""}
-            placeholder="SP"
-            maxLength={2}
-          />
-          <Button type="submit">Filtrar</Button>
+            {perfil ? (
+              <label className="grid gap-2 text-sm font-medium text-slate-700 lg:col-span-2">
+                <span>Aderência</span>
+                <select
+                  name="aderencia"
+                  className={campoSelect}
+                  defaultValue={contexto.aderencia ?? ""}
+                >
+                  <option value="">Todas</option>
+                  <option value="alta">Alta (70–100)</option>
+                  <option value="media">Média (40–69)</option>
+                  <option value="baixa">Baixa (0–39)</option>
+                </select>
+              </label>
+            ) : null}
+            <div className="lg:col-span-1">
+              <Input
+                label="UF"
+                name="uf"
+                defaultValue={params.uf ?? ""}
+                placeholder="SP"
+                maxLength={2}
+              />
+            </div>
+            <label className="grid gap-2 text-sm font-medium text-slate-700 lg:col-span-3">
+              <span>Ordenar por</span>
+              <select
+                name="ordenacao"
+                className={campoSelect}
+                defaultValue={contexto.ordenacao}
+              >
+                {Object.entries(ORDENACOES)
+                  .filter(([valor]) => perfil || valor !== "maior_aderencia")
+                  .map(([valor, label]) => (
+                    <option key={valor} value={valor}>
+                      {label}
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <div className="flex flex-wrap gap-2 sm:col-span-2 lg:col-span-12">
+              <Button type="submit">Filtrar</Button>
+              <Link
+                href={destinoLimparFiltros(contexto)}
+                className={buttonClassName({ variant: "secondary" })}
+              >
+                Limpar filtros
+              </Link>
+            </div>
+          </div>
         </form>
       </section>
 
       <section className="grid gap-4">
         {perfil ? (
           <p className="text-sm text-slate-600">
-            Melhores para este perfil: <strong>{perfil.nomeEmpresa}</strong>.
-            Ordenadas por aderência e data de abertura.
+            Perfil: <strong>{perfil.nomeEmpresa}</strong> · Ordenação:{" "}
+            {ORDENACOES[contexto.ordenacao]}.
           </p>
         ) : (
           <p className="text-sm text-slate-600">

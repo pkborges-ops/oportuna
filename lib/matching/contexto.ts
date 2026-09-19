@@ -1,3 +1,8 @@
+import {
+  ORDENACOES,
+  ordenarOportunidades,
+  type OrdenacaoOportunidades,
+} from "@/lib/matching/ordenar-oportunidades";
 import type { Opportunity, OpportunityStatus, Profile } from "@/types";
 import {
   aplicarMatching,
@@ -12,6 +17,7 @@ export type ContextoOportunidades = {
   uf?: string;
   perfilId?: string;
   aderencia?: MatchLevel;
+  ordenacao?: OrdenacaoOportunidades;
   erro?: string;
   mensagem?: string;
 };
@@ -21,6 +27,7 @@ export function lerContexto(query: QueryOportunidades): ContextoOportunidades {
     typeof query[chave] === "string" ? query[chave] : undefined;
   const status = texto("status");
   const aderencia = texto("aderencia");
+  const ordenacao = texto("ordenacao");
   return {
     busca: texto("busca"),
     uf: texto("uf"),
@@ -34,6 +41,10 @@ export function lerContexto(query: QueryOportunidades): ContextoOportunidades {
     aderencia:
       aderencia === "alta" || aderencia === "media" || aderencia === "baixa"
         ? aderencia
+        : undefined,
+    ordenacao:
+      ordenacao && Object.hasOwn(ORDENACOES, ordenacao)
+        ? (ordenacao as OrdenacaoOportunidades)
         : undefined,
     erro: texto("erro"),
     mensagem: texto("mensagem"),
@@ -62,6 +73,7 @@ export function montarDestino(
     "uf",
     "perfilId",
     "aderencia",
+    "ordenacao",
   ] as const) {
     const valor = contexto[chave];
     if (valor || (chave === "perfilId" && valor !== undefined))
@@ -74,10 +86,24 @@ export function prepararListagem(
   oportunidades: readonly Opportunity[],
   perfil?: Profile,
   aderencia?: MatchLevel,
+  ordenacao: OrdenacaoOportunidades = "recomendadas",
 ): { oportunidade: Opportunity; match?: OpportunityMatch }[] {
-  if (!perfil) return oportunidades.map((oportunidade) => ({ oportunidade }));
-  const resultados = aplicarMatching(oportunidades, perfil);
-  return aderencia
-    ? resultados.filter(({ match }) => match.nivel === aderencia)
-    : resultados;
+  const resultados = perfil
+    ? aplicarMatching(oportunidades, perfil)
+    : oportunidades.map(
+        (
+          oportunidade,
+        ): { oportunidade: Opportunity; match?: OpportunityMatch } => ({
+          oportunidade,
+        }),
+      );
+  const filtrados =
+    perfil && aderencia
+      ? resultados.filter(({ match }) => match?.nivel === aderencia)
+      : resultados;
+  return ordenarOportunidades(filtrados, ordenacao, Boolean(perfil));
+}
+
+export function destinoLimparFiltros(contexto: ContextoOportunidades) {
+  return montarDestino({ perfilId: contexto.perfilId });
 }

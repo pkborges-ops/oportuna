@@ -104,16 +104,17 @@ test("lista com perfil único: nacional, score determinístico, detalhes e favor
     status: "aberta",
     uf: "SP",
     aderencia: "alta",
+    ordenacao: "mais_novas",
   });
   assert.match(html, /90% aderência/);
   assert.doesNotMatch(html, /99%|Perfil privado/);
   assert.match(
     html,
-    /\/oportunidades\/o1\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta/,
+    /\/oportunidades\/o1\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta&amp;ordenacao=mais_novas/,
   );
   assert.match(
     html,
-    /name="redirectTo" value="\/oportunidades\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta"/,
+    /name="redirectTo" value="\/oportunidades\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta&amp;ordenacao=mais_novas"/,
   );
   const call = state.calls.find((c) => c.table === "oportunidades_editais");
   assert.deepEqual(call.filters, [
@@ -186,19 +187,20 @@ test("detalhes usam mesmo perfil e separam aderência da IA persistida", async (
     status: "aberta",
     uf: "SP",
     aderencia: "alta",
+    ordenacao: "mais_novas",
   });
   assert.match(html, /90% aderência/);
   assert.match(html, /81% · análise por IA/);
   assert.match(html, /Palavras encontradas: software/);
   assert.match(
     html,
-    /name="redirectTo" value="\/oportunidades\/o1\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta"/,
+    /name="redirectTo" value="\/oportunidades\/o1\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta&amp;ordenacao=mais_novas"/,
   );
   assert.equal(state.aiCalls, 0);
 });
 test("favoritar/desfavoritar executa action real e preserva destino completo", async () => {
   const destino =
-    "/oportunidades?perfilId=p1&busca=software&status=aberta&uf=SP&aderencia=alta";
+    "/oportunidades?perfilId=p1&busca=software&status=aberta&uf=SP&aderencia=alta&ordenacao=mais_novas";
   for (const favoritoAtual of ["false", "true"]) {
     await assert.rejects(
       alternarFavorito(
@@ -253,8 +255,15 @@ test("trocar perfil recalcula o mesmo item e não reutiliza IA de outro perfil",
     uf: "SP",
   });
   state.tables.analises_oportunidades.push({
-    id: "a1", usuario_id: "u1", oportunidade_id: "o1", perfil_id: "p1",
-    score: 81, resumo: "IA do perfil p1", justificativa: "Teste", pontos_atencao: [], criado_em: "2026-09-18",
+    id: "a1",
+    usuario_id: "u1",
+    oportunidade_id: "o1",
+    perfil_id: "p1",
+    score: 81,
+    resumo: "IA do perfil p1",
+    justificativa: "Teste",
+    pontos_atencao: [],
+    criado_em: "2026-09-18",
   });
   assert.match(await renderList({ perfilId: "p1" }), /90% aderência/);
   assert.match(await renderList({ perfilId: "p2" }), /10% aderência/);
@@ -262,4 +271,68 @@ test("trocar perfil recalcula o mesmo item e não reutiliza IA de outro perfil",
   assert.match(detalhe, /10% aderência/);
   assert.doesNotMatch(detalhe, /IA do perfil p1/);
   assert.equal(state.aiCalls, 0);
+});
+
+test("UX: ordenação e limpar filtros mantêm contexto entre lista e detalhes", async () => {
+  const html = await renderList({
+    perfilId: "p1",
+    busca: "software",
+    ordenacao: "prazo_proximo",
+  });
+  assert.match(html, /value="prazo_proximo" selected=""/);
+  assert.match(html, /href="\/oportunidades\?perfilId=p1"[^>]*>Limpar filtros/);
+  assert.ok(
+    html.indexOf("Perfil da empresa") < html.indexOf("Buscar oportunidade"),
+  );
+  assert.ok(html.indexOf("Buscar oportunidade") < html.indexOf(">Status<"));
+  const detalhe = await renderDetail({
+    perfilId: "p1",
+    ordenacao: "prazo_proximo",
+  });
+  assert.match(detalhe, /name="ordenacao" value="prazo_proximo"/);
+  assert.match(
+    detalhe,
+    /href="\/oportunidades\?perfilId=p1&amp;ordenacao=prazo_proximo"/,
+  );
+  const semPerfil = await renderList({
+    perfilId: "",
+    ordenacao: "maior_aderencia",
+  });
+  assert.doesNotMatch(semPerfil, /value="maior_aderencia"/);
+  assert.match(semPerfil, /value="recomendadas" selected=""/);
+});
+
+test("listagem recomenda abertas mesmo com score menor e preserva filtros", async () => {
+  state.tables.oportunidades_editais = [
+    {
+      ...opRow,
+      id: "fechada",
+      titulo: "Encerrada aderente",
+      status: "encerrada",
+    },
+    {
+      ...opRow,
+      id: "aberta",
+      titulo: "Aberta sem aderência",
+      objeto: "hospital",
+    },
+  ];
+  const html = await renderList({ perfilId: "p1" });
+  assert.ok(
+    html.indexOf("Aberta sem aderência") < html.indexOf("Encerrada aderente"),
+  );
+  const maior = await renderList({
+    perfilId: "p1",
+    ordenacao: "maior_aderencia",
+  });
+  assert.ok(
+    maior.indexOf("Encerrada aderente") < maior.indexOf("Aberta sem aderência"),
+  );
+  const filtrada = await renderList({
+    perfilId: "p1",
+    status: "encerrada",
+    ordenacao: "mais_novas",
+  });
+  assert.doesNotMatch(filtrada, /Aberta sem aderência/);
+  assert.match(filtrada, /Encerrada aderente/);
 });

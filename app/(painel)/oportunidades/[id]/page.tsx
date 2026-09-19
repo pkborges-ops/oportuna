@@ -260,7 +260,9 @@ export default async function DetalheOportunidadePage({
               action={`/oportunidades/${oportunidade.id}`}
               className="grid gap-3 sm:grid-cols-[1fr_auto]"
             >
-              {(["busca", "status", "uf", "aderencia"] as const).map((chave) => (
+              {(
+                ["busca", "status", "uf", "aderencia", "ordenacao"] as const
+              ).map((chave) => (
                 <input
                   key={chave}
                   type="hidden"
