@@ -304,3 +304,95 @@ adicional zero em um repositório privado, conferir a franquia e configurar um
 orçamento que bloqueie uso excedente antes da ativação; atingir esse limite pode
 interromper os disparos. Este workflow não altera configurações de faturamento.
 [Referência oficial de cobrança](https://docs.github.com/en/billing/concepts/product-billing/github-actions).
+
+## Matching determinístico
+
+A listagem `/oportunidades` e os detalhes calculam aderência em runtime para a
+combinação **perfil + oportunidade**, sem IA, chamadas externas ou persistência
+do score. O módulo puro fica em `lib/matching/`; não escreve em oportunidades nem
+em `analises_oportunidades`.
+
+### Fórmula e comparação
+
+- Com palavras-chave úteis: `round(65 × coberturaPalavras + 25 × coberturaSegmento + bônusUF)`.
+- Sem palavras-chave úteis: `round(90 × coberturaSegmento + bônusUF)`.
+- Cada cobertura é a quantidade encontrada dividida pela quantidade de entradas
+  únicas úteis. Segmento sem termos úteis tem cobertura zero.
+- UF igual, após trim e caixa alta, soma 10; UF diferente soma zero e **não exclui**
+  oportunidades. UFs vazias não pontuam.
+- Níveis: alta de 70 a 100; média de 40 a 69; baixa de 0 a 39.
+
+Texto pesquisável: título, objeto, tags e modalidade. Não usa órgão nem cidade.
+Normaliza caixa, acentos, pontuação/separadores e espaços. Palavras-chave são
+removidas se vazias ou compostas só de stopwords; duplicatas são removidas após
+normalização. Preserva a primeira grafia para exibir os motivos.
+
+Uma palavra-chave corresponde quando todos os seus termos relevantes aparecem
+como palavras inteiras no texto pesquisável, inclusive se estiverem separados ou
+em outra ordem. Frases diretas também satisfazem essa regra. Por exemplo, “gestão
+pública” corresponde a “gestão de compras da administração pública”; “obra” não
+corresponde a “manobra”. Não há sinônimos, stemming ou interpretação semântica.
+O segmento livre é tokenizado com a mesma lista explícita de stopwords, e seus
+termos únicos pontuam proporcionalmente. Não há bônus por modalidade/tipo.
+Porte e status da oportunidade não participam do score.
+
+Exemplo: 3 de 4 palavras-chave, todos os termos do segmento e mesma UF resultam
+em `round(65 × 3/4 + 25 + 10) = 84`. Em outra UF: 74. Com todas as palavras e termos
+encontrados, outra UF ainda permite score 90. Sem palavras-chave e com metade dos
+termos do segmento encontrados, mesma UF resulta em `round(90 × 1/2 + 10) = 55`.
+
+### Perfil, filtros e IA
+
+Somente perfis do usuário autenticado são carregados. `perfilId` seleciona um
+perfil dessa lista; ID inválido, alheio ou repetido é ignorado sem fallback. Na
+ausência do parâmetro, apenas um único perfil **ativo** é selecionado automaticamente.
+Vários ativos exigem escolha explícita; perfis inativos podem ser escolhidos
+explicitamente e são identificados no seletor. Uma seleção vazia desativa o matching.
+Sem perfis, há um link para cadastro; sem seleção, nenhum score é exibido.
+
+A ordenação padrão `recomendadas` prioriza abertas, em análise e encerradas,
+nessa ordem; dentro do status, usa score decrescente (com perfil) e publicação
+mais recente como desempate. Sem perfil, usa status e publicação.
+O seletor `ordenacao` também oferece `mais_novas` (abertas/em análise antes de
+encerradas, publicação decrescente), `maior_aderencia` (só com perfil: score
+decrescente, abertas/em análise antes de encerradas no empate) e `prazo_proximo`
+(abertas/em análise antes de encerradas, prazo de participação crescente com
+fallback para abertura). Datas ausentes/inválidas ficam depois das válidas.
+Essas regras alteram somente a apresentação, nunca a fórmula do score.
+“Limpar filtros” preserva o perfil e restaura a ordenação padrão. `aderencia=alta|media|baixa`
+filtra apenas com perfil selecionado. Busca, status e UF continuam sendo filtros
+independentes e explícitos. Favoritos e links para os detalhes preservam
+`perfilId`, `busca`, `status`, `uf`, `aderencia` e `ordenacao` quando aplicáveis.
+
+A análise por IA continua **manual**, acionada pelo botão existente e persistida
+por usuário/oportunidade/perfil. Abrir lista/detalhes ou calcular aderência não
+chama OpenAI. O score da IA tem identificação própria e não é sobrescrito.
+O limiar 60 é apenas uma possibilidade futura de seleção para IA: não aciona nem
+bloqueia a análise manual nesta versão. Dashboard e favoritos não mostram o
+antigo score global como se fosse aderência por perfil.
+
+### Limitações e validação
+
+A aderência textual **não garante aptidão jurídica ou técnica** para participar.
+Não interpreta negação, contexto, plurais ou sinônimos. Termos de uma frase podem
+estar em campos distintos; segmento genérico e termos comuns podem produzir
+falsos positivos. A falta de palavras-chave e de segmento útil deixa apenas o
+bônus geográfico, quando aplicável. O score não é probabilidade de sucesso.
+
+O ranking considera **somente as oportunidades retornadas pela consulta atual**,
+respeitando filtros existentes e o teto de linhas configurado no Supabase. A
+listagem já não possuía paginação explícita; nenhum novo `limit` foi introduzido.
+Portanto, o ranking não garante os melhores itens de toda a base nacional se a
+consulta for truncada pelo servidor. Paginação/ranking global ficam para outra
+etapa. Para N itens, há normalização de texto por item, buscas de tokens em `Set`
+e ordenação O(N log N); perfil preparado uma única vez por listagem. Memória e HTML
+crescem com o lote retornado. Não há infraestrutura nova nem migration.
+
+Validação local com **Node.js 24**: `npm test`, `npm run lint`, `npx tsc --noEmit`,
+`git diff --check` e `npm run build` (com variáveis disponíveis). O comando atual
+de testes exige suporte a `--test-isolation=none`; use Node 24.
+Os testes puros cobrem pesos, normalização, níveis, UF, ranking e determinismo.
+Os cenários de integração renderizam as páginas reais e executam serviços/actions
+com Supabase e OpenAI simulados: seleção autorizada, filtros, contexto de navegação,
+favoritos e análise manual/reutilização. Não acessam produção nem executam migrations
+ou chamadas reais de IA; não substituem validação autenticada em homologação.

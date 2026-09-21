@@ -21,9 +21,7 @@ export default async function DashboardPage() {
     listarPerfis(),
     listarFavoritos(),
   ]);
-  const melhorMatch = [...oportunidades].sort(
-    (a, b) => (b.analise?.score ?? 0) - (a.analise?.score ?? 0),
-  )[0];
+  const proximaOportunidade = oportunidades[0];
 
   return (
     <div className="grid gap-6">
@@ -58,44 +56,42 @@ export default async function DashboardPage() {
       <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Melhor oportunidade do momento</CardTitle>
+            <CardTitle>Oportunidade por data de abertura</CardTitle>
             <CardDescription>
-              Priorizada pela análise de aderência entre oportunidade e perfil.
+              Selecione um perfil na tela de oportunidades para ordenar por aderência.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
-            {melhorMatch ? (
+            {proximaOportunidade ? (
               <>
                 <div className="flex flex-col gap-3 rounded-lg bg-slate-50 p-4 sm:flex-row sm:items-start sm:justify-between">
                   <div>
                     <h3 className="font-semibold text-slate-950">
-                      {melhorMatch.titulo}
+                      {proximaOportunidade.titulo}
                     </h3>
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-                      {melhorMatch.objeto}
+                      {proximaOportunidade.objeto}
                     </p>
                   </div>
-                  <span className="w-fit rounded-md bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800">
-                    {melhorMatch.analise?.score ?? 0}% match
-                  </span>
+
                 </div>
                 <div className="grid gap-3 text-sm sm:grid-cols-3">
                   <div>
                     <p className="text-slate-500">Orgao</p>
                     <p className="mt-1 font-medium text-slate-950">
-                      {melhorMatch.orgao}
+                      {proximaOportunidade.orgao}
                     </p>
                   </div>
                   <div>
                     <p className="text-slate-500">Valor estimado</p>
                     <p className="mt-1 font-medium text-slate-950">
-                      {formatarMoeda(melhorMatch.valorEstimado)}
+                      {formatarMoeda(proximaOportunidade.valorEstimado)}
                     </p>
                   </div>
                   <div>
                     <p className="text-slate-500">Abertura</p>
                     <p className="mt-1 font-medium text-slate-950">
-                      {formatarData(melhorMatch.dataAbertura)}
+                      {formatarData(proximaOportunidade.dataAbertura)}
                     </p>
                   </div>
                 </div>

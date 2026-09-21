@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
@@ -17,6 +18,17 @@ import { obterApresentacaoOrigem } from "@/lib/oportunidades/apresentacao-origem
 import { buscarAnalisePorPerfil } from "@/services/analises-service";
 import { buscarOportunidadePorId } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
+import { calcularMatch } from "@/lib/matching/calcular-match";
+import {
+  lerContexto,
+  montarDestino,
+  selecionarPerfil,
+  type QueryOportunidades,
+} from "@/lib/matching/contexto";
+import {
+  BadgeAderencia,
+  MotivosAderencia,
+} from "@/components/oportunidades/aderencia";
 import type { OpportunityParticipation } from "@/types";
 
 const mensagemParticipacaoNaoIdentificada =
@@ -65,10 +77,10 @@ function obterStatusPrazo(data?: string) {
 function temDadosParticipacao(participacao?: OpportunityParticipation) {
   return Boolean(
     participacao?.portal ||
-      participacao?.url ||
-      participacao?.forma ||
-      participacao?.prazoLimite ||
-      participacao?.observacoes,
+    participacao?.url ||
+    participacao?.forma ||
+    participacao?.prazoLimite ||
+    participacao?.observacoes,
   );
 }
 
@@ -166,13 +178,10 @@ export default async function DetalheOportunidadePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{
-    perfilId?: string;
-    erro?: string;
-    mensagem?: string;
-  }>;
+  searchParams: Promise<QueryOportunidades>;
 }) {
-  const [{ id }, query] = await Promise.all([params, searchParams]);
+  const [{ id }, rawQuery] = await Promise.all([params, searchParams]);
+  const query = lerContexto(rawQuery);
   const oportunidade = await buscarOportunidadePorId(id);
 
   if (!oportunidade) {
@@ -181,8 +190,16 @@ export default async function DetalheOportunidadePage({
 
   const origem = obterApresentacaoOrigem(oportunidade);
   const perfis = await listarPerfis();
-  const perfilSelecionado =
-    perfis.find((perfil) => perfil.id === query.perfilId) ?? perfis[0];
+  const perfilSelecionado = selecionarPerfil(perfis, query.perfilId);
+  const contexto = {
+    ...query,
+    perfilId: perfilSelecionado?.id ?? "",
+    aderencia: perfilSelecionado ? query.aderencia : undefined,
+  };
+  const destino = montarDestino(contexto, `/oportunidades/${oportunidade.id}`);
+  const match = perfilSelecionado
+    ? calcularMatch({ perfil: perfilSelecionado, oportunidade })
+    : undefined;
   const analise = perfilSelecionado
     ? await buscarAnalisePorPerfil(oportunidade.id, perfilSelecionado.id)
     : undefined;
@@ -212,11 +229,7 @@ export default async function DetalheOportunidadePage({
               name="favoritoAtual"
               value={String(oportunidade.favorito)}
             />
-            <input
-              type="hidden"
-              name="redirectTo"
-              value={`/oportunidades/${oportunidade.id}`}
-            />
+            <input type="hidden" name="redirectTo" value={destino} />
             <Button
               type="submit"
               variant={oportunidade.favorito ? "ghost" : "primary"}
@@ -232,6 +245,81 @@ export default async function DetalheOportunidadePage({
           {oportunidade.objeto}
         </p>
       </section>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Aderência ao perfil</CardTitle>
+          <CardDescription>
+            Cálculo determinístico por perfil. A análise por IA é opcional e
+            manual.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4">
+          {perfis.length > 0 ? (
+            <form
+              action={`/oportunidades/${oportunidade.id}`}
+              className="grid gap-3 sm:grid-cols-[1fr_auto]"
+            >
+              {(
+                ["busca", "status", "uf", "aderencia", "ordenacao"] as const
+              ).map((chave) => (
+                <input
+                  key={chave}
+                  type="hidden"
+                  name={chave}
+                  value={contexto[chave] ?? ""}
+                />
+              ))}
+              <label className="grid gap-2 text-sm font-medium text-slate-700">
+                <span>Perfil da empresa</span>
+                <select
+                  name="perfilId"
+                  defaultValue={perfilSelecionado?.id ?? ""}
+                  className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950"
+                >
+                  <option value="">Selecione um perfil</option>
+                  {perfis.map((perfil) => (
+                    <option key={perfil.id} value={perfil.id}>
+                      {perfil.nomeEmpresa}
+                      {perfil.status === "inativo" ? " (inativo)" : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Button type="submit" variant="secondary" className="self-end">
+                Usar perfil
+              </Button>
+            </form>
+          ) : (
+            <Link
+              href="/perfis/novo"
+              className="text-sm font-semibold text-cyan-800 underline"
+            >
+              Criar perfil de empresa
+            </Link>
+          )}
+          {match ? (
+            <>
+              <BadgeAderencia match={match} />
+              <MotivosAderencia match={match} />
+              <p className="text-sm text-slate-600">
+                Termos do segmento encontrados:{" "}
+                {match.termosSegmentoEncontrados.join(", ") || "Nenhum"}.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-slate-600">
+              Selecione um perfil para calcular aderência.
+            </p>
+          )}
+          <Link
+            href={montarDestino(contexto)}
+            className="text-sm font-semibold text-cyan-800 underline"
+          >
+            Voltar às oportunidades
+          </Link>
+        </CardContent>
+      </Card>
 
       <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="grid gap-6">
@@ -321,12 +409,13 @@ export default async function DetalheOportunidadePage({
               <div>
                 <CardTitle>Analise por IA</CardTitle>
                 <CardDescription>
-                  Resultado inicial para priorização da oportunidade.
+                  Análise aprofundada, gerada manualmente para o perfil
+                  selecionado.
                 </CardDescription>
               </div>
               {analise ? (
                 <span className="w-fit rounded-md bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800">
-                  {analise.score}% match
+                  {analise.score}% · análise por IA
                 </span>
               ) : null}
             </div>
@@ -342,35 +431,6 @@ export default async function DetalheOportunidadePage({
                 {query.mensagem}
               </div>
             ) : null}
-
-            {perfis.length > 0 ? (
-              <form
-                action={`/oportunidades/${oportunidade.id}`}
-                className="grid gap-3 sm:grid-cols-[1fr_auto]"
-              >
-                <label className="grid gap-2 text-sm font-medium text-slate-700">
-                  <span>Perfil da empresa</span>
-                  <select
-                    name="perfilId"
-                    defaultValue={perfilSelecionado?.id}
-                    className="h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm text-slate-950 shadow-sm outline-none transition focus:border-cyan-500 focus:ring-2 focus:ring-cyan-100"
-                  >
-                    {perfis.map((perfil) => (
-                      <option key={perfil.id} value={perfil.id}>
-                        {perfil.nomeEmpresa}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <Button type="submit" variant="secondary" className="self-end">
-                  Usar perfil
-                </Button>
-              </form>
-            ) : (
-              <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-                Cadastre um perfil de empresa antes de gerar análises por IA.
-              </div>
-            )}
 
             {perfilSelecionado ? (
               <form action={analisarOportunidade}>
