@@ -4,6 +4,7 @@ import {
 } from "@/lib/matching/ordenar-oportunidades";
 import type { OpportunityStatus, Profile } from "@/types";
 import type { MatchLevel } from "@/lib/matching/calcular-match";
+import { normalizarVisao, type VisaoOportunidades } from "@/lib/oportunidades/ciclo-vida";
 
 export type QueryOportunidades = Record<string, string | string[] | undefined>;
 export type ContextoOportunidades = {
@@ -14,6 +15,7 @@ export type ContextoOportunidades = {
   aderencia?: MatchLevel;
   ordenacao?: OrdenacaoOportunidades;
   pagina?: number;
+  visao?: VisaoOportunidades;
   erro?: string;
   mensagem?: string;
 };
@@ -28,6 +30,7 @@ export function lerContexto(query: QueryOportunidades): ContextoOportunidades {
   return {
     busca: texto("busca"),
     pagina,
+    visao: normalizarVisao(query.visao),
     uf: texto("uf"),
     status:
       status === "aberta" || status === "em_analise" || status === "encerrada"
@@ -84,9 +87,10 @@ export function montarDestino(
       query.set(chave, valor ?? "");
   }
   if (contexto.pagina && contexto.pagina > 1) query.set("pagina", String(contexto.pagina));
+  if (contexto.visao && contexto.visao !== "ativas") query.set("visao", contexto.visao);
   return query.size ? `${caminho}?${query.toString()}` : caminho;
 }
 
 export function destinoLimparFiltros(contexto: ContextoOportunidades) {
-  return montarDestino({ perfilId: contexto.perfilId });
+  return montarDestino({ perfilId: contexto.perfilId, visao: contexto.visao });
 }

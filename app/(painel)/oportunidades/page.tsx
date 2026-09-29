@@ -14,6 +14,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { VISOES } from "@/lib/oportunidades/ciclo-vida";
+import { BadgeSituacao } from "@/components/oportunidades/situacao";
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
 import { listarOportunidadesPaginadas } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
@@ -46,7 +48,7 @@ export default async function OportunidadesPage({
     ...params,
     perfilId: perfil?.id ?? "",
     aderencia: perfil ? params.aderencia : undefined,
-    ordenacao: resolverOrdenacao(params.ordenacao, Boolean(perfil)),
+    ordenacao: resolverOrdenacao(params.ordenacao ?? (params.visao === "historico" ? "mais_novas" : undefined), Boolean(perfil)),
   };
   const paginacao = await listarOportunidadesPaginadas(contexto);
   const resultados = paginacao.itens;
@@ -57,14 +59,28 @@ export default async function OportunidadesPage({
       <section className="grid gap-6">
         <div>
           <h2 className="text-2xl font-semibold text-slate-950">
-            Oportunidades
+            {params.visao === "historico" ? "Histórico de oportunidades" : "Oportunidades"}
           </h2>
           <p className="mt-1 text-slate-600">
-            Busque oportunidades nacionais e consulte a aderência ao perfil da
-            sua empresa.
+            {params.visao === "historico"
+              ? "Processos com prazo de participação vencido ou status encerrado."
+              : params.visao === "todas"
+                ? "Base completa, incluindo oportunidades ativas e histórico."
+                : "Oportunidades com prazo vigente ou a confirmar. Confira as condições no edital."}
           </p>
         </div>
+        <nav aria-label="Visão das oportunidades" className="flex flex-wrap gap-2">
+          {Object.entries(VISOES).map(([visao, titulo]) => (
+            <Link key={visao} aria-current={params.visao === visao ? "page" : undefined}
+              href={montarDestino({ ...contexto, visao: visao as keyof typeof VISOES, pagina: 1,
+                ordenacao: params.ordenacao })}
+              className={buttonClassName({ variant: params.visao === visao ? "primary" : "secondary" })}>
+              {titulo}
+            </Link>
+          ))}
+        </nav>
         <form action="/oportunidades" className="grid gap-5">
+          <input type="hidden" name="visao" value={params.visao} />
           <label className="grid w-full gap-2 text-sm font-medium text-slate-700 lg:max-w-2xl">
             <span>Perfil da empresa</span>
             <select
@@ -202,6 +218,7 @@ export default async function OportunidadesPage({
                 </CardDescription>
               </div>
               <div className="flex flex-wrap gap-2">
+                <BadgeSituacao situacao={oportunidade.situacaoOperacional ?? "indeterminada"} />
                 <span className="rounded-md bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700">
                   {formatarStatus(oportunidade.status)}
                 </span>

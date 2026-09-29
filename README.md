@@ -402,7 +402,8 @@ Não publicar esta versão antes de disponibilizar as RPCs: não existe fallback
 ranking parcial no TypeScript. A paridade e a segurança foram validadas em
 homologação com 50.000 oportunidades. Há oscilação HTTP conhecida em Recomendadas
 após inatividade (até 8,028 s); detalhes e resultados em `tests/sql/HOMOLOGACAO.md`.
-A migration ainda não foi aplicada em produção.
+Antes de qualquer deploy, confirmar que a migration exigida está presente no
+projeto de produção; não reaplicar migrations antigas sem revisar seu estado.
 
 A migration acrescenta somente `matching_tokens text[]` e `busca_documento text`
 à tabela existente, ambos `GENERATED ALWAYS AS (...) STORED`. São derivados
@@ -470,8 +471,8 @@ mesmo que só 20 cards sejam transferidos.
 A projeção do card exclui análises IA e observações extensas de participação.
 Favoritos são consultados por EXISTS somente nos IDs da página e no usuário atual,
 sem carregar antecipadamente todos os favoritos. O detalhe mantém dados completos
-e obtém matching pela RPC canônica. O dashboard usa COUNT exato separado e LIMIT 1
-para o card por abertura; não usa o tamanho de uma página como total nacional.
+e obtém matching pela RPC canônica. O dashboard atual usa uma RPC de resumo para
+contar a visão acionável e a base completa; não usa o tamanho de uma página como total nacional.
 
 **Navegação:** `pagina` é inteiro positivo dentro de int32; inválido volta a 1.
 As páginas têm tamanho fixo 20 no banco, sem parâmetro de tamanho vindo do cliente.
@@ -484,9 +485,58 @@ com Date.parse da data ISO usada na referência.
 
 OFFSET/LIMIT preserva ranking global no snapshot de cada consulta, mas inserções
 ou alterações entre requests podem mover itens entre páginas. Páginas profundas
-custam mais; keyset fica para V2. Não há promessa de latência para 1k/10k/50k sem
+custam mais; keyset fica para uma versão futura. Não há promessa de latência para 1k/10k/50k sem
 benchmark. Um score 98 participa antes do corte; em recomendadas, status ainda tem
 prioridade. Score não garante aptidão jurídica/técnica nem probabilidade de vitória.
+
+### Ciclo de vida: ativas, histórico e todas
+
+**Pré-requisito de publicação desta etapa:** revisar e executar manualmente
+`supabase/oportunidades_ciclo_vida_v1.sql` em homologação e, depois dos testes,
+em produção antes de publicar a aplicação. O workflow, build e `npm test` não
+executam migrations. A migration depende da SQL V1 acima, cria uma view com
+`security_invoker` e duas RPCs novas; não atualiza, exclui ou recria
+oportunidades, perfis, favoritos ou análises. A RPC V1 permanece disponível.
+
+A situação operacional é calculada em cada consulta, sem coluna de status
+dependente do relógio nem job. `status = 'encerrada'` ou
+`participacao_prazo_limite <= agora` significa **encerrada**. Prazo futuro e
+status não encerrado significam **ativa**. Prazo ausente ou inválido, sem status
+encerrado, significa **prazo a confirmar** (`indeterminada`). A visão padrão
+**Ativas** inclui ativas e indeterminadas para não ocultar processos que ainda
+podem admitir participação; **Histórico** contém as encerradas; **Todas** inclui
+ambos. O badge distingue prazo confirmado de prazo desconhecido. O status de
+origem nunca é sobrescrito por esta classificação.
+
+Esta regra vale igualmente para Pregão Eletrônico, Concorrência Eletrônica,
+Dispensa e Credenciamento. O PNCP define `dataAberturaProposta` como início do
+recebimento e `dataEncerramentoProposta` como fim. A ingestão atual usa o
+primeiro (ou publicação, como fallback) em `data_abertura` e o segundo em
+`participacao_prazo_limite`, quando informado. Por isso `data_abertura` **não**
+encerra participação. Amostras públicas de Dispensa e Credenciamento sem data
+final reforçam o tratamento conservador. A classificação não identifica
+suspensão, cancelamento ou anulação, pois os campos existentes não oferecem
+evidência estruturada suficiente para esses estados. Prazo vazio não é garantia
+de disponibilidade: o usuário deve conferir edital e portal de origem.
+
+`listar_oportunidades_paginadas_v2` aplica visão e filtros antes de calcular
+matching, aderência e ranking global; só então corta 20 cards. A fórmula, a
+autorização por perfil e a RPC de matching do detalhe permanecem as mesmas.
+O filtro de aderência e a paginação continuam globais dentro da visão escolhida.
+As abas preservam filtros e perfil e reiniciam na página 1. Histórico abre por
+publicação mais recente; em Todas, **Recomendadas** deixa encerradas depois das
+demais. Detalhes e favoritos históricos permanecem acessíveis, sem desfavoritar
+nem apagar dados. O dashboard conta ativas mais prazos a confirmar como número
+principal e informa separadamente o tamanho da base completa. Os alertas ainda
+seguem a lógica anterior; filtrar apenas oportunidades ativas neles é uma etapa
+futura separada.
+
+Esta migration não cria índice: a seletividade temporal e o custo do matching
+dependem da distribuição real de prazos. Medir V1 `recomendadas` com todas versus
+V2 `recomendadas` com ativas na mesma massa de homologação antes de atribuir
+ganho de desempenho. Registros sem prazo permanecem na visão padrão e, portanto,
+continuam participando do cálculo de score. Também pode haver mudança de página
+entre requests enquanto prazos vencem ou chegam novos registros.
 
 ### Validação SQL manual e paridade
 

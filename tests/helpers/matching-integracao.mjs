@@ -118,7 +118,7 @@ test("lista com perfil único: nacional, score determinístico, detalhes e favor
     html,
     /name="redirectTo" value="\/oportunidades\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta&amp;ordenacao=mais_novas"/,
   );
-  const call = state.calls.find((c) => c.rpc === "listar_oportunidades_paginadas_v1");
+  const call = state.calls.find((c) => c.rpc === "listar_oportunidades_paginadas_v2");
   assert.equal(call.args.p_status, "aberta");
   assert.equal(call.args.p_uf, "SP");
   assert.equal(call.args.p_busca, "software");
@@ -312,12 +312,13 @@ test("listagem recomenda abertas mesmo com score menor e preserva filtros", asyn
       objeto: "hospital",
     },
   ];
-  const html = await renderList({ perfilId: "p1" });
+  const html = await renderList({ perfilId: "p1", visao: "todas" });
   assert.ok(
     html.indexOf("Aberta sem aderência") < html.indexOf("Encerrada aderente"),
   );
   const maior = await renderList({
     perfilId: "p1",
+    visao: "todas",
     ordenacao: "maior_aderencia",
   });
   assert.ok(
@@ -325,6 +326,7 @@ test("listagem recomenda abertas mesmo com score menor e preserva filtros", asyn
   );
   const filtrada = await renderList({
     perfilId: "p1",
+    visao: "historico",
     status: "encerrada",
     ordenacao: "mais_novas",
   });
@@ -372,8 +374,54 @@ test('dashboard conta a base sem usar tamanho de página', async () => {
   const { default:Dashboard }=await import('../../app/(painel)/dashboard/page.tsx');
   const html=renderToStaticMarkup(await Dashboard());
   assert.match(html,/1200/);
-  const calls=state.calls.filter(c=>c.table==='oportunidades_editais');
-  assert.ok(calls.some(c=>c.selectOptions?.count==='exact' && c.selectOptions?.head));
-  assert.ok(calls.some(c=>c.limit===1));
-  assert.equal(calls.length,2);
+  assert.ok(state.calls.some(c=>c.rpc==='resumo_oportunidades_ativas_v1'));
+  assert.equal(state.calls.some(c=>c.table==='oportunidades_editais'),false);
+});
+
+
+test('ciclo: ativas exclui prazo vencido antes do ranking e preserva histórico', async () => {
+  const future=new Date(Date.now()+86400000).toISOString();
+  const past=new Date(Date.now()-86400000).toISOString();
+  state.tables.oportunidades_editais=[
+    {...opRow,id:'vencida',titulo:'Vencida aderente',participacao_prazo_limite:past},
+    {...opRow,id:'futura',titulo:'Futura hospital',objeto:'hospital',participacao_prazo_limite:future},
+    {...opRow,id:'sem-prazo',titulo:'Sem prazo confiável',data_abertura:'2000-01-01'},
+  ];
+  const antes=structuredClone(state.tables.oportunidades_editais);
+  const ativa=await renderList({perfilId:'p1'});
+  assert.doesNotMatch(ativa,/Vencida aderente/);
+  assert.match(ativa,/Futura hospital/);assert.match(ativa,/Sem prazo confiável/);
+  assert.match(ativa,/ATIVA/);assert.match(ativa,/PRAZO A CONFIRMAR/);
+  const historico=await renderList({perfilId:'p1',visao:'historico',uf:'SP',busca:'software'});
+  assert.match(historico,/Histórico de oportunidades/);assert.match(historico,/Vencida aderente/);
+  assert.doesNotMatch(historico,/Futura hospital|Sem prazo confiável/);
+  assert.match(historico,/90% aderência/);
+  const todas=await renderList({perfilId:'p1',visao:'todas'});
+  assert.ok(todas.indexOf('Futura hospital')<todas.indexOf('Vencida aderente'));
+  assert.deepEqual(state.tables.oportunidades_editais,antes);
+  assert.equal(state.aiCalls,0);
+});
+
+test('ciclo: favorito histórico, detalhe, troca de perfil e retorno continuam acessíveis', async () => {
+  state.tables.oportunidades_editais[0].participacao_prazo_limite=new Date(Date.now()-86400000).toISOString();
+  state.tables.oportunidades_favoritos=[{usuario_id:'u1',oportunidade_id:'o1'}];
+  const {default:Favoritos}=await import('../../app/(painel)/favoritos/page.tsx');
+  const html=renderToStaticMarkup(await Favoritos({searchParams:Promise.resolve({})}));
+  assert.match(html,/Software nacional/);assert.match(html,/ENCERRADA/);
+  const detalhe=await renderDetail({visao:'historico',pagina:'3',perfilId:'p1',uf:'SP'});
+  assert.match(detalhe,/O prazo desta oportunidade já foi encerrado/);
+  assert.match(detalhe,/90% aderência/);assert.match(detalhe,/Favorito/);
+  assert.match(detalhe,/name="visao" value="historico"/);assert.match(detalhe,/name="pagina" value="3"/);
+  assert.match(detalhe,/visao=historico/);assert.match(detalhe,/pagina=3/);
+  assert.equal(state.tables.oportunidades_favoritos.length,1);
+  assert.equal(state.calls.some(c=>c.operation==='delete'),false);
+});
+
+test('ciclo: dashboard conta acionáveis e mostra total completo separadamente', async () => {
+  state.tables.oportunidades_editais=[opRow,{...opRow,id:'encerrada',status:'encerrada'}];
+  const {default:Dashboard}=await import('../../app/(painel)/dashboard/page.tsx');
+  const html=renderToStaticMarkup(await Dashboard());
+  assert.ok(html.includes('Oportunidades ativas / a confirmar'));assert.match(html,/Base completa: 2 oportunidades/);
+  const {obterResumoOportunidades}=await import('../../services/oportunidades-service.ts');
+  const resumo=await obterResumoOportunidades();assert.equal(resumo.total,1);assert.equal(resumo.totalBase,2);
 });

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 import type { Opportunity, OpportunityStatus } from "@/types";
 import { normalizarPagina, type ContextoOportunidades } from "@/lib/matching/contexto";
+import { normalizarVisao } from "@/lib/oportunidades/ciclo-vida";
 import type { OpportunityMatch } from "@/lib/matching/calcular-match";
 
 export type FiltrosOportunidades = {
@@ -12,6 +13,7 @@ export type FiltrosOportunidades = {
 };
 
 type OportunidadeRow = {
+  situacao_operacional?: Opportunity["situacaoOperacional"];
   id: string;
   codigo: string;
   origem: Opportunity["origem"];
@@ -88,6 +90,7 @@ function mapearOportunidade(
     status: row.status,
     tags: row.tags ?? [],
     favorito: favoritos.has(row.id),
+    situacaoOperacional: row.situacao_operacional,
     participacao: {
       portal: row.participacao_portal ?? undefined,
       url: row.participacao_url ?? undefined,
@@ -187,8 +190,8 @@ export async function listarFavoritos() {
   }
 
   const { data, error } = await supabase
-    .from("oportunidades_editais")
-    .select(camposOportunidade)
+    .from("oportunidades_ciclo_vida_v1")
+    .select(`${camposOportunidade}, situacao_operacional`)
     .in("id", Array.from(favoritos))
     .order("data_abertura", { ascending: true });
 
@@ -205,8 +208,8 @@ export async function buscarOportunidadePorId(id: string) {
   const { supabase, usuarioId } = await obterContextoAutenticado();
   const favoritos = await listarIdsFavoritos(usuarioId);
   const { data, error } = await supabase
-    .from("oportunidades_editais")
-    .select(camposOportunidade)
+    .from("oportunidades_ciclo_vida_v1")
+    .select(`${camposOportunidade}, situacao_operacional`)
     .eq("id", id)
     .maybeSingle();
 
@@ -235,7 +238,7 @@ type OportunidadePaginadaRow = {
 export async function listarOportunidadesPaginadas(filtros: ContextoOportunidades = {}) {
   const { supabase } = await obterContextoAutenticado();
   const pagina = normalizarPagina(filtros.pagina);
-  const { data, error } = await supabase.rpc("listar_oportunidades_paginadas_v1", {
+  const { data, error } = await supabase.rpc("listar_oportunidades_paginadas_v2", {
     p_perfil_id: filtros.perfilId || null,
     p_busca: filtros.busca?.trim() || null,
     p_status: filtros.status || null,
@@ -243,6 +246,7 @@ export async function listarOportunidadesPaginadas(filtros: ContextoOportunidade
     p_aderencia: filtros.perfilId ? filtros.aderencia || null : null,
     p_ordenacao: filtros.ordenacao || "recomendadas",
     p_pagina: pagina,
+    p_visao: normalizarVisao(filtros.visao),
   });
   if (error) throw new Error("Não foi possível listar as oportunidades.");
   const linhas = (data ?? []) as OportunidadePaginadaRow[];
@@ -269,19 +273,8 @@ export async function calcularMatchOportunidade(perfilId: string, oportunidadeId
 // O contador não depende da página nem do limite de linhas da Data API.
 export async function obterResumoOportunidades() {
   const { supabase } = await obterContextoAutenticado();
-  const [contagem, primeira] = await Promise.all([
-    supabase.from("oportunidades_editais").select("id", { count: "exact", head: true }),
-    supabase.from("oportunidades_editais")
-      .select("id, titulo, orgao, cidade, uf, objeto, valor_estimado, data_abertura")
-      .order("data_abertura", { ascending: true }).order("id", { ascending: true })
-      .limit(1).maybeSingle(),
-  ]);
-  if (contagem.error || primeira.error) throw new Error("Não foi possível carregar o resumo.");
-  const row = primeira.data;
-  return {
-    total: contagem.count ?? 0,
-    proxima: row ? { id: String(row.id), titulo: String(row.titulo), orgao: String(row.orgao),
-      cidade: String(row.cidade), uf: String(row.uf), objeto: String(row.objeto),
-      valorEstimado: Number(row.valor_estimado), dataAbertura: String(row.data_abertura) } : undefined,
-  };
+  const { data, error } = await supabase.rpc("resumo_oportunidades_ativas_v1");
+  if (error) throw new Error("Não foi possível carregar o resumo.");
+  const resumo = data as { total: number; totalBase: number; proxima: (Pick<Opportunity, "id" | "titulo" | "orgao" | "cidade" | "uf" | "objeto" | "valorEstimado"> & { dataAbertura: string | null }) | null };
+  return { total: resumo.total, totalBase: resumo.totalBase, proxima: resumo.proxima ?? undefined };
 }
