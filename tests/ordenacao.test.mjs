@@ -1,3 +1,4 @@
+import { prepararListagem } from "./helpers/preparar-listagem.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { ordenarOportunidades } from "../lib/matching/ordenar-oportunidades.ts";
@@ -5,7 +6,6 @@ import {
   destinoLimparFiltros,
   lerContexto,
   montarDestino,
-  prepararListagem,
 } from "../lib/matching/contexto.ts";
 
 const item = (id, status, score, dataPublicacao, extras = {}) => ({

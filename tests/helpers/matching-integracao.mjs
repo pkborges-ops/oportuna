@@ -96,6 +96,8 @@ beforeEach(() => {
   };
   state.calls = [];
   state.aiCalls = 0;
+  state.rpcRows = undefined;
+  state.rpcError = null;
 });
 
 test("lista com perfil único: nacional, score determinístico, detalhes e favoritos preservam filtros", async () => {
@@ -116,12 +118,10 @@ test("lista com perfil único: nacional, score determinístico, detalhes e favor
     html,
     /name="redirectTo" value="\/oportunidades\?busca=software&amp;status=aberta&amp;uf=SP&amp;perfilId=p1&amp;aderencia=alta&amp;ordenacao=mais_novas"/,
   );
-  const call = state.calls.find((c) => c.table === "oportunidades_editais");
-  assert.deepEqual(call.filters, [
-    ["status", "aberta"],
-    ["uf", "SP"],
-  ]);
-  assert.ok(call.orFilter.includes("software"));
+  const call = state.calls.find((c) => c.rpc === "listar_oportunidades_paginadas_v1");
+  assert.equal(call.args.p_status, "aberta");
+  assert.equal(call.args.p_uf, "SP");
+  assert.equal(call.args.p_busca, "software");
   assert.equal(state.aiCalls, 0);
 });
 test("filtros existentes e aderência alteram os resultados", async () => {
@@ -134,12 +134,7 @@ test("filtros existentes e aderência alteram os resultados", async () => {
     assert.match(await renderList(query), /Nenhuma oportunidade encontrada/);
   }
   assert.match(await renderList({}), /Software nacional/);
-  assert.ok(
-    state.calls
-      .filter((c) => c.table === "oportunidades_editais")
-      .at(-1)
-      .filters.every(([k]) => k !== "uf"),
-  );
+  assert.equal(state.calls.filter(c=>c.rpc).at(-1).args.p_uf, null);
 });
 test("vários perfis ativos exigem escolha; sem seleção não há score global nem filtro", async () => {
   state.tables.perfis_empresa.push({ ...perfilRow, id: "p2" });
@@ -335,4 +330,50 @@ test("listagem recomenda abertas mesmo com score menor e preserva filtros", asyn
   });
   assert.doesNotMatch(filtrada, /Aberta sem aderência/);
   assert.match(filtrada, /Encerrada aderente/);
+});
+
+test('contrato da RPC: 21º só sinaliza próxima, favoritos e score vêm do banco', async () => {
+  const { listarOportunidadesPaginadas } = await import('../../services/oportunidades-service.ts');
+  state.rpcRows = Array.from({length:21},(_,i)=>({
+    oportunidade:{...opRow,id:'pagina-'+i, titulo:'RPC-'+i,
+      dataPublicacao:opRow.data_publicacao,dataAbertura:opRow.data_abertura,valorEstimado:opRow.valor_estimado},
+    match:{score:42,nivel:'media',palavrasEncontradas:[],termosSegmentoEncontrados:[],mesmaUf:false,motivos:['Do banco']},
+    favorito:i===0,
+  }));
+  const pagina = await listarOportunidadesPaginadas({perfilId:'p1',pagina:2});
+  assert.equal(pagina.itens.length,20); assert.equal(pagina.temProxima,true);
+  assert.equal(pagina.temAnterior,true); assert.equal(pagina.pagina,2);
+  assert.equal(pagina.itens[0].match.score,42); assert.equal(pagina.itens[0].oportunidade.favorito,true);
+  assert.equal(state.calls.some(c=>c.table==='oportunidades_favoritos'),false);
+  const html = await renderList({perfilId:'p1',pagina:'2'});
+  assert.match(html,/Página 2/); assert.match(html,/42% aderência/);
+  assert.match(html,/pagina=3/); assert.match(html,/pagina=2/);
+  assert.doesNotMatch(html,/RPC-20/);
+});
+test('página vazia continua navegável; filtros novos não enviam pagina antiga', async () => {
+  state.rpcRows=[];
+  const html = await renderList({perfilId:'p1',pagina:'3'});
+  assert.match(html,/Nenhuma oportunidade encontrada/); assert.match(html,/pagina=2/);
+  assert.doesNotMatch(html,/name="pagina"/);
+  assert.match(html,/disabled=""[^>]*>Próxima/);
+});
+test('falha RPC não apresenta ranking parcial', async () => {
+  state.rpcError={message:'erro interno não expor'};
+  await assert.rejects(renderList({}),/Não foi possível listar/);
+});
+test('detalhe preserva página ao voltar e favoritar', async () => {
+  const html=await renderDetail({perfilId:'p1',pagina:'4'});
+  assert.match(html,/href="\/oportunidades\?perfilId=p1&amp;pagina=4"/);
+  assert.match(html,/name="redirectTo"[^>]+pagina=4/);
+  assert.ok(state.calls.some(c=>c.rpc==='calcular_match_oportunidade_v1'));
+});
+test('dashboard conta a base sem usar tamanho de página', async () => {
+  state.tables.oportunidades_editais=Array.from({length:1200},(_,i)=>({...opRow,id:'o'+i}));
+  const { default:Dashboard }=await import('../../app/(painel)/dashboard/page.tsx');
+  const html=renderToStaticMarkup(await Dashboard());
+  assert.match(html,/1200/);
+  const calls=state.calls.filter(c=>c.table==='oportunidades_editais');
+  assert.ok(calls.some(c=>c.selectOptions?.count==='exact' && c.selectOptions?.head));
+  assert.ok(calls.some(c=>c.limit===1));
+  assert.equal(calls.length,2);
 });

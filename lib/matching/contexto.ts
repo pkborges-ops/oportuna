@@ -1,14 +1,9 @@
 import {
   ORDENACOES,
-  ordenarOportunidades,
   type OrdenacaoOportunidades,
 } from "@/lib/matching/ordenar-oportunidades";
-import type { Opportunity, OpportunityStatus, Profile } from "@/types";
-import {
-  aplicarMatching,
-  type MatchLevel,
-  type OpportunityMatch,
-} from "@/lib/matching/calcular-match";
+import type { OpportunityStatus, Profile } from "@/types";
+import type { MatchLevel } from "@/lib/matching/calcular-match";
 
 export type QueryOportunidades = Record<string, string | string[] | undefined>;
 export type ContextoOportunidades = {
@@ -18,6 +13,7 @@ export type ContextoOportunidades = {
   perfilId?: string;
   aderencia?: MatchLevel;
   ordenacao?: OrdenacaoOportunidades;
+  pagina?: number;
   erro?: string;
   mensagem?: string;
 };
@@ -28,8 +24,10 @@ export function lerContexto(query: QueryOportunidades): ContextoOportunidades {
   const status = texto("status");
   const aderencia = texto("aderencia");
   const ordenacao = texto("ordenacao");
+  const pagina = normalizarPagina(texto("pagina"));
   return {
     busca: texto("busca"),
+    pagina,
     uf: texto("uf"),
     status:
       status === "aberta" || status === "em_analise" || status === "encerrada"
@@ -49,6 +47,12 @@ export function lerContexto(query: QueryOportunidades): ContextoOportunidades {
     erro: texto("erro"),
     mensagem: texto("mensagem"),
   };
+}
+
+export function normalizarPagina(valor?: string | number): number {
+  if (valor === undefined || !/^[1-9]\d*$/.test(String(valor))) return 1;
+  const numero = Number(valor);
+  return Number.isSafeInteger(numero) && numero <= 2_147_483_647 ? numero : 1;
 }
 
 // Recebe SOMENTE os perfis retornados por listarPerfis (restritos ao usuário).
@@ -79,29 +83,8 @@ export function montarDestino(
     if (valor || (chave === "perfilId" && valor !== undefined))
       query.set(chave, valor ?? "");
   }
+  if (contexto.pagina && contexto.pagina > 1) query.set("pagina", String(contexto.pagina));
   return query.size ? `${caminho}?${query.toString()}` : caminho;
-}
-
-export function prepararListagem(
-  oportunidades: readonly Opportunity[],
-  perfil?: Profile,
-  aderencia?: MatchLevel,
-  ordenacao: OrdenacaoOportunidades = "recomendadas",
-): { oportunidade: Opportunity; match?: OpportunityMatch }[] {
-  const resultados = perfil
-    ? aplicarMatching(oportunidades, perfil)
-    : oportunidades.map(
-        (
-          oportunidade,
-        ): { oportunidade: Opportunity; match?: OpportunityMatch } => ({
-          oportunidade,
-        }),
-      );
-  const filtrados =
-    perfil && aderencia
-      ? resultados.filter(({ match }) => match?.nivel === aderencia)
-      : resultados;
-  return ordenarOportunidades(filtrados, ordenacao, Boolean(perfil));
 }
 
 export function destinoLimparFiltros(contexto: ContextoOportunidades) {

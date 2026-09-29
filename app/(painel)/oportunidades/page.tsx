@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
-import { listarOportunidades } from "@/services/oportunidades-service";
+import { listarOportunidadesPaginadas } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
 import {
   BadgeAderencia,
@@ -25,7 +25,6 @@ import {
   destinoLimparFiltros,
   lerContexto,
   montarDestino,
-  prepararListagem,
   selecionarPerfil,
   type QueryOportunidades,
 } from "@/lib/matching/contexto";
@@ -41,10 +40,7 @@ export default async function OportunidadesPage({
   searchParams,
 }: OportunidadesPageProps) {
   const params = lerContexto(await searchParams);
-  const [oportunidades, perfis] = await Promise.all([
-    listarOportunidades(params),
-    listarPerfis(),
-  ]);
+  const perfis = await listarPerfis();
   const perfil = selecionarPerfil(perfis, params.perfilId);
   const contexto = {
     ...params,
@@ -52,12 +48,8 @@ export default async function OportunidadesPage({
     aderencia: perfil ? params.aderencia : undefined,
     ordenacao: resolverOrdenacao(params.ordenacao, Boolean(perfil)),
   };
-  const resultados = prepararListagem(
-    oportunidades,
-    perfil,
-    contexto.aderencia,
-    contexto.ordenacao,
-  );
+  const paginacao = await listarOportunidadesPaginadas(contexto);
+  const resultados = paginacao.itens;
   const destino = montarDestino(contexto);
 
   return (
@@ -68,7 +60,7 @@ export default async function OportunidadesPage({
             Oportunidades
           </h2>
           <p className="mt-1 text-slate-600">
-            Busque oportunidades nacionais e calcule a aderência ao perfil da
+            Busque oportunidades nacionais e consulte a aderência ao perfil da
             sua empresa.
           </p>
         </div>
@@ -237,13 +229,13 @@ export default async function OportunidadesPage({
                 <div>
                   <p className="text-slate-500">Publicação</p>
                   <p className="font-medium text-slate-950">
-                    {formatarData(oportunidade.dataPublicacao)}
+                    {oportunidade.dataPublicacao ? formatarData(oportunidade.dataPublicacao) : "Não informada"}
                   </p>
                 </div>
                 <div>
                   <p className="text-slate-500">Abertura</p>
                   <p className="font-medium text-slate-950">
-                    {formatarData(oportunidade.dataAbertura)}
+                    {oportunidade.dataAbertura ? formatarData(oportunidade.dataAbertura) : "Não informada"}
                   </p>
                 </div>
               </div>
@@ -292,6 +284,21 @@ export default async function OportunidadesPage({
             </CardContent>
           </Card>
         ))}
+        <nav aria-label="Paginação de oportunidades" className="flex items-center justify-between gap-3">
+          {paginacao.temAnterior ? (
+            <Link href={montarDestino({ ...contexto, pagina: paginacao.pagina - 1 })}
+              className={buttonClassName({ variant: "secondary" })}>Anterior</Link>
+          ) : (
+            <Button variant="secondary" disabled>Anterior</Button>
+          )}
+          <span className="text-sm text-slate-600">Página {paginacao.pagina}</span>
+          {paginacao.temProxima ? (
+            <Link href={montarDestino({ ...contexto, pagina: paginacao.pagina + 1 })}
+              className={buttonClassName({ variant: "secondary" })}>Próxima</Link>
+          ) : (
+            <Button variant="secondary" disabled>Próxima</Button>
+          )}
+        </nav>
       </section>
     </div>
   );

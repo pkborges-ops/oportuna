@@ -1,0 +1,282 @@
+{
+  "ambiente": "oportuna-homologacao",
+  "project_ref": "uzmgxxhiedevsxedgqij",
+  "inicio_utc": "2026-09-29T11:26:06.684Z",
+  "via": "HTTP real POST /rest/v1/rpc/listar_oportunidades_paginadas_v1, Node fetch local",
+  "node": "v24.19.0",
+  "timeout_ms": 45000,
+  "pagina": 1,
+  "aquecimento": "Sem aquecimento dedicado e sem exclusao de execucoes. Login, identidade, propriedade e contagem precedem as RPCs.",
+  "execucoes": [
+    {
+      "cenario": "Recomendadas",
+      "execucao": 1,
+      "inicio_utc": "2026-09-29T11:26:11.848Z",
+      "http_status": 200,
+      "total_ms": 6555.845,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Maior aderencia",
+      "execucao": 1,
+      "inicio_utc": "2026-09-29T11:26:18.457Z",
+      "http_status": 200,
+      "total_ms": 2391.45,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Aderencia alta",
+      "execucao": 1,
+      "inicio_utc": "2026-09-29T11:26:20.861Z",
+      "http_status": 200,
+      "total_ms": 1624.449,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Busca textual com perfil",
+      "execucao": 1,
+      "inicio_utc": "2026-09-29T11:26:22.500Z",
+      "http_status": 200,
+      "total_ms": 1743.376,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Mais novas com perfil",
+      "execucao": 1,
+      "inicio_utc": "2026-09-29T11:26:24.259Z",
+      "http_status": 200,
+      "total_ms": 888.278,
+      "bytes_resposta": 37834,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Recomendadas",
+      "execucao": 2,
+      "inicio_utc": "2026-09-29T11:26:25.160Z",
+      "http_status": 200,
+      "total_ms": 1628.164,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Maior aderencia",
+      "execucao": 2,
+      "inicio_utc": "2026-09-29T11:26:26.802Z",
+      "http_status": 200,
+      "total_ms": 1601.391,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Aderencia alta",
+      "execucao": 2,
+      "inicio_utc": "2026-09-29T11:26:28.419Z",
+      "http_status": 200,
+      "total_ms": 1439.869,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Busca textual com perfil",
+      "execucao": 2,
+      "inicio_utc": "2026-09-29T11:26:29.869Z",
+      "http_status": 200,
+      "total_ms": 1790.734,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Mais novas com perfil",
+      "execucao": 2,
+      "inicio_utc": "2026-09-29T11:26:31.668Z",
+      "http_status": 200,
+      "total_ms": 463.923,
+      "bytes_resposta": 37834,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Recomendadas",
+      "execucao": 3,
+      "inicio_utc": "2026-09-29T11:26:32.139Z",
+      "http_status": 200,
+      "total_ms": 1609.578,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Maior aderencia",
+      "execucao": 3,
+      "inicio_utc": "2026-09-29T11:26:33.762Z",
+      "http_status": 200,
+      "total_ms": 1729.586,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Aderencia alta",
+      "execucao": 3,
+      "inicio_utc": "2026-09-29T11:26:35.504Z",
+      "http_status": 200,
+      "total_ms": 1418.254,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Busca textual com perfil",
+      "execucao": 3,
+      "inicio_utc": "2026-09-29T11:26:36.929Z",
+      "http_status": 200,
+      "total_ms": 1833.107,
+      "bytes_resposta": 42013,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    },
+    {
+      "cenario": "Mais novas com perfil",
+      "execucao": 3,
+      "inicio_utc": "2026-09-29T11:26:38.767Z",
+      "http_status": 200,
+      "total_ms": 510.597,
+      "bytes_resposta": 37834,
+      "itens_rpc": 21,
+      "itens_ui": 20,
+      "timeout": false,
+      "erro_funcional": false,
+      "erro_rede": false
+    }
+  ],
+  "resumos": [
+    {
+      "cenario": "Recomendadas",
+      "execucoes": 3,
+      "menor_ms": 1609.578,
+      "maior_ms": 6555.845,
+      "media_ms": 3264.529,
+      "status": "VERMELHO"
+    },
+    {
+      "cenario": "Maior aderencia",
+      "execucoes": 3,
+      "menor_ms": 1601.391,
+      "maior_ms": 2391.45,
+      "media_ms": 1907.476,
+      "status": "VERDE"
+    },
+    {
+      "cenario": "Aderencia alta",
+      "execucoes": 3,
+      "menor_ms": 1418.254,
+      "maior_ms": 1624.449,
+      "media_ms": 1494.191,
+      "status": "VERDE"
+    },
+    {
+      "cenario": "Busca textual com perfil",
+      "execucoes": 3,
+      "menor_ms": 1743.376,
+      "maior_ms": 1833.107,
+      "media_ms": 1789.072,
+      "status": "VERDE"
+    },
+    {
+      "cenario": "Mais novas com perfil",
+      "execucoes": 3,
+      "menor_ms": 463.923,
+      "maior_ms": 888.278,
+      "media_ms": 620.933,
+      "status": "VERDE"
+    }
+  ],
+  "perfil": {
+    "palavras_quantidade": 3,
+    "segmento_termos": 2,
+    "mesmo_perfil_em_todos": true
+  },
+  "volume": 50000,
+  "cenarios": [
+    {
+      "nome": "Recomendadas",
+      "modo": "recomendadas"
+    },
+    {
+      "nome": "Maior aderencia",
+      "modo": "maior_aderencia"
+    },
+    {
+      "nome": "Aderencia alta",
+      "modo": "recomendadas",
+      "aderencia": "alta"
+    },
+    {
+      "nome": "Busca textual com perfil",
+      "modo": "recomendadas",
+      "busca": "software"
+    },
+    {
+      "nome": "Mais novas com perfil",
+      "modo": "mais_novas"
+    }
+  ],
+  "concluido": true,
+  "validacao": "Matching completo dos 21 itens comparado a referencia TypeScript; filtro, ordem interna da pagina, IDs unicos e respostas identicas entre repeticoes verificados. Nao revalida todo o ranking global.",
+  "fim_utc": "2026-09-29T11:26:39.291Z"
+}

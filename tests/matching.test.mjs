@@ -1,3 +1,4 @@
+import { prepararListagem } from "./helpers/preparar-listagem.mjs";
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
@@ -11,7 +12,6 @@ import {
   selecionarPerfil,
   montarDestino,
   lerContexto,
-  prepararListagem,
 } from "../lib/matching/contexto.ts";
 
 const perfil = {

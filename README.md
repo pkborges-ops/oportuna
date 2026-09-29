@@ -307,10 +307,10 @@ interromper os disparos. Este workflow não altera configurações de faturament
 
 ## Matching determinístico
 
-A listagem `/oportunidades` e os detalhes calculam aderência em runtime para a
-combinação **perfil + oportunidade**, sem IA, chamadas externas ou persistência
-do score. O módulo puro fica em `lib/matching/`; não escreve em oportunidades nem
-em `analises_oportunidades`.
+A listagem `/oportunidades` e os detalhes usam matching canônico no PostgreSQL para
+**perfil + oportunidade**, sem IA e sem persistência do score. Os módulos puros
+`lib/matching/calcular-match.ts` e `normalizar-texto.ts` permanecem como referência
+de testes de paridade; não são chamados pelas telas em produção.
 
 ### Fórmula e comparação
 
@@ -379,14 +379,10 @@ estar em campos distintos; segmento genérico e termos comuns podem produzir
 falsos positivos. A falta de palavras-chave e de segmento útil deixa apenas o
 bônus geográfico, quando aplicável. O score não é probabilidade de sucesso.
 
-O ranking considera **somente as oportunidades retornadas pela consulta atual**,
-respeitando filtros existentes e o teto de linhas configurado no Supabase. A
-listagem já não possuía paginação explícita; nenhum novo `limit` foi introduzido.
-Portanto, o ranking não garante os melhores itens de toda a base nacional se a
-consulta for truncada pelo servidor. Paginação/ranking global ficam para outra
-etapa. Para N itens, há normalização de texto por item, buscas de tokens em `Set`
-e ordenação O(N log N); perfil preparado uma única vez por listagem. Memória e HTML
-crescem com o lote retornado. Não há infraestrutura nova nem migration.
+O ranking considera todas as oportunidades que atendem aos filtros explícitos
+no banco. O cálculo de score e o filtro de aderência ocorrem antes da ordenação
+e do LIMIT/OFFSET. A Data API devolve até 21 registros; a aplicação exibe 20.
+Existe uma migration manual descrita abaixo, sem tabela de matches ou infraestrutura nova.
 
 Validação local com **Node.js 24**: `npm test`, `npm run lint`, `npx tsc --noEmit`,
 `git diff --check` e `npm run build` (com variáveis disponíveis). O comando atual
@@ -396,3 +392,139 @@ Os cenários de integração renderizam as páginas reais e executam serviços/a
 com Supabase e OpenAI simulados: seleção autorizada, filtros, contexto de navegação,
 favoritos e análise manual/reutilização. Não acessam produção nem executam migrations
 ou chamadas reais de IA; não substituem validação autenticada em homologação.
+
+### Paginação e matching SQL V1
+
+**Pré-requisito de publicação:** aplicar manualmente e validar, primeiro em
+homologação, `supabase/oportunidades_paginadas_v1.sql`. Não executar migrations
+antigas novamente. O build, o GitHub Actions, a aplicação e `npm test` não aplicam SQL.
+Não publicar esta versão antes de disponibilizar as RPCs: não existe fallback para
+ranking parcial no TypeScript. A paridade e a segurança foram validadas em
+homologação com 50.000 oportunidades. Há oscilação HTTP conhecida em Recomendadas
+após inatividade (até 8,028 s); detalhes e resultados em `tests/sql/HOMOLOGACAO.md`.
+A migration ainda não foi aplicada em produção.
+
+A migration acrescenta somente `matching_tokens text[]` e `busca_documento text`
+à tabela existente, ambos `GENERATED ALWAYS AS (...) STORED`. São derivados
+independentes de perfil, não scores. São materializados também para as linhas
+existentes pelo ALTER TABLE (backfill), sem UPDATE de IDs/favoritos/análises,
+sem disparar alteração dos timestamps existentes e sem alterar origem/tipo ou
+checkpoints. Colunas geradas foram preferidas a triggers para impedir drift entre
+fonte e derivados, inclusive em updates feitos fora da aplicação. O helper de
+tokens é imutável e recebe somente text/text[], sem conversões dependentes de
+horário, formato de data ou sessão. A expressão de busca usa concatenação text.
+A ingestão PNCP continua com o mesmo payload e código; o PostgreSQL calcula os derivados.
+
+O backfill STORED e a criação de índices exigem tempo e locks: planejar uma janela,
+backup e teste com volume representativo. `lock_timeout = 5s` limita a espera para
+adquirir lock, **não** o tempo total de materialização após adquiri-lo. Não atualizar
+os helpers V1 em produção sem planejar recomputação das colunas geradas; mudanças
+de regra/Unicode devem receber nova versão e migration.
+
+Funções públicas de entrada, `SECURITY INVOKER` e disponíveis a `authenticated`:
+
+- `listar_oportunidades_paginadas_v1(p_perfil_id, p_busca, p_status, p_uf,
+  p_aderencia, p_ordenacao, p_pagina)`;
+- `calcular_match_oportunidade_v1(p_perfil_id, p_oportunidade_id)`.
+
+Ambas exigem `auth.uid()`; perfil informado precisa satisfazer simultaneamente ID
+e `usuario_id = auth.uid()`. RLS continua em vigor e nenhuma usa service role.
+Helpers puros recebem dados, sem consultar perfis. O helper autorizado lê o perfil
+uma vez por RPC e prepara keywords/segmento/UF. Lista e detalhe reutilizam
+`matching_calcular_v1`. Dados de entrada inválidos não interpolam SQL dinâmico.
+Sem perfil, não há score; aderência é ignorada e maior aderência vira recomendadas.
+
+**Normalização:** não usa unaccent, stemming ou FTS. O SQL usa NFD, categorias
+Unicode explícitas, lowercase com Final_Sigma e trim ECMAScript. As constantes
+foram geradas com Node.js 24 pelo script `scripts/gerar-unicode-matching.mjs`; a
+versão Unicode fica registrada na migration. Isso evita presumir que lower/regex
+por locale ou unaccent são iguais ao JavaScript. O banco requer UTF8 e PostgreSQL
+15 ou superior. É obrigatório validar a normalização também na versão real do
+PostgreSQL, cuja biblioteca Unicode/NFD pode diferir da versão do Node.
+O score preserva a sequência double precision da referência; arredonda positivos
+pela parte fracionária >= 0,5, evitando o arredondamento bankers de casts.
+
+**Busca:** pg_trgm + GIN em busca_documento, formado pelos cinco campos atuais,
+sem UF. O documento é apenas pré-filtro; a RPC revalida o trecho em título, órgão,
+modalidade, cidade ou objeto. `%`, `_` e barra são escapados: texto literal, não
+wildcards do usuário. Acentos continuam significativos na busca ILIKE. O matching
+permanece insensível a acentos conforme sua regra específica. Termos curtos podem
+não aproveitar bem o índice. Texto não atravessa campos na validação final.
+
+Índices novos: GIN trigram em busca_documento, B-tree em UF e B-tree no grupo
+não encerrada/encerrada + publicação DESC + ID. Foram considerados os índices
+existentes de status, data_abertura e as PKs de oportunidade/favoritos. Não há
+B-tree de score dinâmico. Índices adicionais de prazo/status devem depender dos
+planos medidos. Sem perfil, a RPC usa um caminho sem matching e com corte no banco;
+com perfil, materializa IDs/chaves/match do conjunto elegível e depois corta a
+página. Custo de score continua proporcional ao universo filtrado e aos termos,
+mesmo que só 20 cards sejam transferidos.
+
+**Retorno:** a RPC retorna até 21 linhas `{ oportunidade, match, favorito }`.
+`listarOportunidadesPaginadas()` remove a sentinela 21 e retorna:
+
+```text
+{ itens, pagina, tamanhoPagina: 20, temAnterior, temProxima }
+```
+
+A projeção do card exclui análises IA e observações extensas de participação.
+Favoritos são consultados por EXISTS somente nos IDs da página e no usuário atual,
+sem carregar antecipadamente todos os favoritos. O detalhe mantém dados completos
+e obtém matching pela RPC canônica. O dashboard usa COUNT exato separado e LIMIT 1
+para o card por abertura; não usa o tamanho de uma página como total nacional.
+
+**Navegação:** `pagina` é inteiro positivo dentro de int32; inválido volta a 1.
+As páginas têm tamanho fixo 20 no banco, sem parâmetro de tamanho vindo do cliente.
+Filtros, perfil e ordenação são submetidos sem pagina antiga, reiniciando em 1.
+Limpar filtros preserva perfil e reinicia. Detalhes, voltar e favoritos preservam
+pagina no contexto. Não há COUNT na listagem. Página vazia fora da faixa mantém
+Anterior disponível; Próxima depende da sentinela. ID desempata todas as ordenações;
+prazo usa timestamp de participação e depois abertura à meia-noite UTC, compatível
+com Date.parse da data ISO usada na referência.
+
+OFFSET/LIMIT preserva ranking global no snapshot de cada consulta, mas inserções
+ou alterações entre requests podem mover itens entre páginas. Páginas profundas
+custam mais; keyset fica para V2. Não há promessa de latência para 1k/10k/50k sem
+benchmark. Um score 98 participa antes do corte; em recomendadas, status ainda tem
+prioridade. Score não garante aptidão jurídica/técnica nem probabilidade de vitória.
+
+### Validação SQL manual e paridade
+
+Procedimento reproduzível, identificação do ambiente, comandos e critérios de
+aceite: [homologação manual](tests/sql/HOMOLOGACAO.md). O benchmark sintético
+`tests/sql/oportunidades-benchmark.sql` prepara 1k/10k/50k registros em banco
+descartável vazio e executa EXPLAIN sob `authenticated`, com rollback ao final.
+
+Fixtures em `tests/helpers/matching-fixtures.mjs` alimentam **38 cenários de match**
+e 16 textos de normalização. As expectativas completas (score, nível, palavras,
+segmento, UF e motivos) vêm de `calcularMatch`. Incluem 39/40/69/70, score 98,
+acentos compostos/decompostos, caixa, trim, frases, stopwords, duplicatas, ligaturas,
+sigma grego, Unicode fora do BMP e UF. Geradores só escrevem arquivos locais:
+
+```bash
+node scripts/gerar-unicode-matching.mjs --check
+node --import ./tests/register.mjs scripts/gerar-paridade-sql.mjs --check
+```
+
+Usar a versão Node/Unicode registrada para regenerar. Não editar expectativas SQL
+à mão. O teste local confere referência/fixtures, **não executa PostgreSQL**.
+Os doubles das páginas simulam o contrato RPC, não são testes do matcher SQL.
+
+Sequência manual em banco de homologação:
+
+1. Revisar e aplicar a única migration nova.
+2. Executar `tests/sql/matching-paridade.sql`: compara os 38 resultados completos
+   e normalizações SQL contra expectativas TS; qualquer diferença gera EXCEPTION.
+3. Executar `tests/sql/oportunidades-paginadas.sql` como administrador em ambiente
+   de teste: fixtures em transação, SET ROLE authenticated, JWTs simulados e ROLLBACK.
+   Valida RLS/perfis, ranking global, busca literal, sentinela/páginas, desempate,
+   favoritos por usuário, status e prazo. Não usar em produção.
+4. Executar exemplos em `tests/sql/oportunidades-explain.sql`, substituindo os UUIDs
+   por usuário/perfil de homologação, com bases 1k/10k/50k e páginas rasas/profundas.
+   Inclui sem perfil/mais novas, recomendadas, maior aderência, busca e aderência alta.
+   PL/pgSQL pode exibir só Function Scan: inspecionar também os SELECTs internos ou
+   auto_explain de statements aninhados, quando disponível. Registrar buffers,
+   tempos reais, CPU e concorrência; nenhum tempo foi estimado como medição.
+
+A validação no banco é pré-requisito para considerar a paridade confiável e liberar
+commit/publicação desta etapa. A aplicação não tenta executar a migration ao iniciar.

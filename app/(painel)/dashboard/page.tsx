@@ -11,17 +11,17 @@ import {
 import { formatarData, formatarMoeda } from "@/lib/formatters";
 import {
   listarFavoritos,
-  listarOportunidades,
+  obterResumoOportunidades,
 } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
 
 export default async function DashboardPage() {
-  const [oportunidades, perfis, favoritos] = await Promise.all([
-    listarOportunidades(),
+  const [resumo, perfis, favoritos] = await Promise.all([
+    obterResumoOportunidades(),
     listarPerfis(),
     listarFavoritos(),
   ]);
-  const proximaOportunidade = oportunidades[0];
+  const proximaOportunidade = resumo.proxima;
 
   return (
     <div className="grid gap-6">
@@ -39,7 +39,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-4">
         {[
-          { label: "Oportunidades", value: oportunidades.length },
+          { label: "Oportunidades", value: resumo.total },
           { label: "Favoritos", value: favoritos.length },
           { label: "Perfis ativos", value: perfis.length },
           { label: "Alertas por e-mail", value: 12 },

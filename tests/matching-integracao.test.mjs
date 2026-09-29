@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-test("regressão das páginas, serviços autenticados e actions (12 cenários isolados)", () => {
+test("regressão das páginas, serviços autenticados e actions", () => {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
   const result = spawnSync(
@@ -15,5 +15,6 @@ test("regressão das páginas, serviços autenticados e actions (12 cenários is
     ],
     { encoding: "utf8", env },
   );
+  assert.ifError(result.error);
   assert.equal(result.status, 0, result.stdout + result.stderr);
 });
