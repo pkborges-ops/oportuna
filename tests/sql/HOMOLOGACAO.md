@@ -563,3 +563,58 @@ e documentação. Única migration nova: `supabase/oportunidades_paginadas_v1.sq
 Sem alterações em PNCP, alertas, checkpoints, serviços de IA/análise ou migrations
 antigas. Arquivos de ambiente e credenciais não integram a entrega; exemplos de
 autenticação nos testes são fictícios. Migration de produção não executada.
+
+### Ciclo de vida V2 — homologação de 29/09/2026
+
+Projeto isolado `oportuna-homologacao` (`uzmgxxhiedevsxedgqij`), PostgreSQL
+17.6, 50.000 oportunidades sintéticas. A nova migration
+`supabase/oportunidades_ciclo_vida_v1.sql` foi executada **somente aqui**;
+nenhuma migration desta etapa foi aplicada em produção. A V2 foi ajustada para
+classificar diretamente as linhas elegíveis e montar o estado descritivo apenas
+para os cards da página. Não houve UPDATE/DELETE de oportunidades nem alteração
+dos 50.000 registros. As consultas de teste autenticadas terminaram em ROLLBACK.
+
+Nesta massa, **todos os 50.000** registros têm `participacao_prazo_limite` nulo;
+10.000 têm status `encerrada`. A view e o resumo retornaram 40.000 na visão
+padrão como prazo a confirmar e 10.000 no histórico. Isso valida o tratamento
+conservador e o corte antes do ranking, mas não representa a distribuição de
+prazos reais preenchidos.
+
+Sob `SET LOCAL ROLE authenticated` e JWTs de teste, a V2 retornou página com
+matching para o perfil próprio do usuário sintético A e de um usuário de teste B
+do ambiente; os dois acessos cruzados foram rejeitados com `42501`. Não foi
+usada service role para essas chamadas. A função de situação passou para prazo
+futuro, vencido, ausente e status encerrado; Ativas não retornou encerradas,
+Histórico não retornou ativas, a visão inválida foi rejeitada, e o resumo
+separou 40.000/50.000. Na primeira página de **Todas**, V1 e V2 devolveram
+21 linhas na mesma ordem, com **zero divergência** de ID, JSON de matching ou
+favorito. Os 38 cenários de paridade e os 16 de normalização pertencem à V1;
+os helpers de matching não foram modificados nesta etapa.
+`has_table_privilege` e `has_function_privilege` confirmaram: `anon` não acessa
+a view nem executa a V2; `authenticated` tem SELECT na view.
+
+`EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` na mesma sessão, mesmo perfil sintético,
+sem filtros, página 1, mediu a RPC externa. O plano expõe apenas `Function Scan`,
+portanto os números não isolam o custo de cada operação interna.
+
+| Consulta | Tempos observados (ms) | Observação |
+|---|---|---|
+| V1 Recomendadas / Todas | 1579,130; 1686,522; 1524,768; 1666,247 | Base anterior, 50.000 elegíveis |
+| V2 inicial Recomendadas / Ativas | 2215,654; 2202,372; 2215,230 | Versão intermediária, substituída |
+| V2 final Recomendadas / Ativas | 2833,829; 1604,810; 1484,069 | 40.000 elegíveis; primeira execução após `CREATE OR REPLACE` oscilou |
+| V2 final Recomendadas / Todas | 1628,213 | 50.000 elegíveis |
+
+Não se atribui ganho percentual à classificação: a amostra tem prazos finais
+todos nulos, o banco apresentou oscilação após recriar a função e houve somente
+uma medição da V2 final em Todas. A execução estável de Ativas ficou próxima
+da V1 na mesma massa, mas falta medição HTTP desta etapa e volume representativo
+de prazos PNCP preenchidos. A oscilação HTTP de Recomendadas registrada acima
+na V1 também permanece risco conhecido até investigação específica.
+
+O primeiro resumo do dashboard pela view mediu 6794,403 ms e a repetição
+1200,594 ms. Planos diretos separaram a contagem pela view (545,183 ms),
+a contagem na tabela com o mesmo predicado (160,932 ms) e a seleção do card
+na tabela (111,276 ms). A função de resumo passou a usar a tabela sob o mesmo
+RLS, classificando apenas o card selecionado. Depois do ajuste, a RPC mediu
+124,480 ms e 239,499 ms; retornou 40.000 ativas/a confirmar, 50.000 na base
+e um card válido. São medições SQL, não tempos HTTP.

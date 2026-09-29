@@ -43,5 +43,5 @@ rollback;
 `;
 const path = 'tests/sql/matching-paridade.sql';
 if (process.argv.includes('--check')) {
-  if (readFileSync(path,'utf8') !== sql) throw Error('Fixtures SQL desatualizadas');
+  if (readFileSync(path,'utf8').replaceAll('\r\n','\n') !== sql) throw Error('Fixtures SQL desatualizadas');
 } else writeFileSync(path,sql);

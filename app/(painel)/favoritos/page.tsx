@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/formatters";
 import { listarFavoritos } from "@/services/oportunidades-service";
+import { BadgeSituacao } from "@/components/oportunidades/situacao";
 
 type FavoritosPageProps = {
   searchParams: Promise<{
@@ -51,6 +52,7 @@ export default async function FavoritosPage({ searchParams }: FavoritosPageProps
         {favoritos.map((oportunidade) => (
           <Card key={oportunidade.id}>
             <CardHeader>
+              <div><BadgeSituacao situacao={oportunidade.situacaoOperacional ?? "indeterminada"} /></div>
               <CardTitle>{oportunidade.titulo}</CardTitle>
               <CardDescription>
                 {oportunidade.orgao} - {oportunidade.cidade}/{oportunidade.uf}

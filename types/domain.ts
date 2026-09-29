@@ -29,6 +29,7 @@ export const OPPORTUNITY_TYPES = [
 export type OpportunityType = (typeof OPPORTUNITY_TYPES)[number];
 
 export type Opportunity = {
+  situacaoOperacional?: "ativa" | "encerrada" | "indeterminada";
   origem: OpportunityOrigin;
   tipo: OpportunityType;
   id: string;

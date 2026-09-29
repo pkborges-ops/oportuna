@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BadgeSituacao } from "@/components/oportunidades/situacao";
 import { notFound } from "next/navigation";
 
 import {
@@ -15,6 +16,7 @@ import {
 } from "@/components/ui/card";
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
 import { obterApresentacaoOrigem } from "@/lib/oportunidades/apresentacao-origem";
+import type { SituacaoOperacional } from "@/lib/oportunidades/ciclo-vida";
 import { buscarAnalisePorPerfil } from "@/services/analises-service";
 import { buscarOportunidadePorId, calcularMatchOportunidade } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
@@ -85,11 +87,13 @@ function temDadosParticipacao(participacao?: OpportunityParticipation) {
 
 function ComoParticipar({
   participacao,
+  situacao,
 }: {
   participacao?: OpportunityParticipation;
+  situacao?: SituacaoOperacional;
 }) {
   const temDados = temDadosParticipacao(participacao);
-  const statusPrazo = obterStatusPrazo(participacao?.prazoLimite);
+  const statusPrazo = situacao === "encerrada" ? null : obterStatusPrazo(participacao?.prazoLimite);
 
   return (
     <Card className="border-cyan-200 bg-cyan-50/60">
@@ -208,6 +212,7 @@ export default async function DetalheOportunidadePage({
       <section className="grid gap-3">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex flex-wrap gap-2">
+            <BadgeSituacao situacao={oportunidade.situacaoOperacional ?? "indeterminada"} />
             <span className="rounded-md bg-slate-200 px-3 py-1 text-sm font-semibold text-slate-700">
               {formatarStatus(oportunidade.status)}
             </span>
@@ -237,6 +242,15 @@ export default async function DetalheOportunidadePage({
             </Button>
           </form>
         </div>
+        {oportunidade.situacaoOperacional === "encerrada" ? (
+          <p className="rounded-md bg-amber-50 p-3 text-sm text-amber-900">
+            {oportunidade.status === "encerrada"
+              ? "Esta oportunidade consta como encerrada. Os dados e análises permanecem disponíveis no histórico."
+              : "O prazo desta oportunidade já foi encerrado."}
+          </p>
+        ) : oportunidade.situacaoOperacional === "indeterminada" ? (
+          <p className="text-sm text-amber-800">Prazo não confirmado. Confira a janela de participação no edital.</p>
+        ) : null}
         <h2 className="text-2xl font-semibold text-slate-950">
           {oportunidade.titulo}
         </h2>
@@ -260,7 +274,7 @@ export default async function DetalheOportunidadePage({
               className="grid gap-3 sm:grid-cols-[1fr_auto]"
             >
               {(
-                ["busca", "status", "uf", "aderencia", "ordenacao"] as const
+                ["busca", "status", "uf", "aderencia", "ordenacao", "visao"] as const
               ).map((chave) => (
                 <input
                   key={chave}
@@ -269,6 +283,7 @@ export default async function DetalheOportunidadePage({
                   value={contexto[chave] ?? ""}
                 />
               ))}
+              <input type="hidden" name="pagina" value={contexto.pagina ?? 1} />
               <label className="grid gap-2 text-sm font-medium text-slate-700">
                 <span>Perfil da empresa</span>
                 <select
@@ -399,7 +414,7 @@ export default async function DetalheOportunidadePage({
             </CardContent>
           </Card>
 
-          <ComoParticipar participacao={oportunidade.participacao} />
+          <ComoParticipar participacao={oportunidade.participacao} situacao={oportunidade.situacaoOperacional} />
         </div>
 
         <Card>

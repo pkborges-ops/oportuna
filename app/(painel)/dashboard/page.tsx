@@ -39,7 +39,7 @@ export default async function DashboardPage() {
 
       <section className="grid gap-4 md:grid-cols-4">
         {[
-          { label: "Oportunidades", value: resumo.total },
+          { label: "Oportunidades ativas / a confirmar", value: resumo.total },
           { label: "Favoritos", value: favoritos.length },
           { label: "Perfis ativos", value: perfis.length },
           { label: "Alertas por e-mail", value: 12 },
@@ -56,9 +56,10 @@ export default async function DashboardPage() {
       <section className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <Card>
           <CardHeader>
-            <CardTitle>Oportunidade por data de abertura</CardTitle>
+            <CardTitle>Oportunidade com prazo vigente ou a confirmar</CardTitle>
             <CardDescription>
               Selecione um perfil na tela de oportunidades para ordenar por aderência.
+              {" "}Base completa: {resumo.totalBase} oportunidades, incluindo histórico.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-4">
@@ -91,14 +92,14 @@ export default async function DashboardPage() {
                   <div>
                     <p className="text-slate-500">Abertura</p>
                     <p className="mt-1 font-medium text-slate-950">
-                      {formatarData(proximaOportunidade.dataAbertura)}
+                      {proximaOportunidade.dataAbertura ? formatarData(proximaOportunidade.dataAbertura) : "Não informada"}
                     </p>
                   </div>
                 </div>
               </>
             ) : (
               <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-                Nenhuma oportunidade cadastrada ainda.
+                Nenhuma oportunidade ativa ou com prazo a confirmar no momento.
               </div>
             )}
           </CardContent>
