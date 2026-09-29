@@ -2,6 +2,8 @@ import { redirect } from "next/navigation";
 
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 import type { Opportunity, OpportunityStatus } from "@/types";
+import { normalizarPagina, type ContextoOportunidades } from "@/lib/matching/contexto";
+import type { OpportunityMatch } from "@/lib/matching/calcular-match";
 
 export type FiltrosOportunidades = {
   busca?: string;
@@ -213,4 +215,73 @@ export async function buscarOportunidadePorId(id: string) {
   }
 
   return data ? mapearOportunidade(data as OportunidadeRow, favoritos) : undefined;
+}
+
+export type ItemOportunidadePaginada = {
+  oportunidade: Opportunity;
+  match?: OpportunityMatch;
+  favorito: boolean;
+};
+
+type OportunidadePaginadaRow = {
+  oportunidade: Omit<Opportunity, "favorito" | "dataPublicacao" | "dataAbertura"> & {
+    dataPublicacao: string | null;
+    dataAbertura: string | null;
+  };
+  match: OpportunityMatch | null;
+  favorito: boolean;
+};
+
+export async function listarOportunidadesPaginadas(filtros: ContextoOportunidades = {}) {
+  const { supabase } = await obterContextoAutenticado();
+  const pagina = normalizarPagina(filtros.pagina);
+  const { data, error } = await supabase.rpc("listar_oportunidades_paginadas_v1", {
+    p_perfil_id: filtros.perfilId || null,
+    p_busca: filtros.busca?.trim() || null,
+    p_status: filtros.status || null,
+    p_uf: filtros.uf?.trim().toUpperCase() || null,
+    p_aderencia: filtros.perfilId ? filtros.aderencia || null : null,
+    p_ordenacao: filtros.ordenacao || "recomendadas",
+    p_pagina: pagina,
+  });
+  if (error) throw new Error("Não foi possível listar as oportunidades.");
+  const linhas = (data ?? []) as OportunidadePaginadaRow[];
+  const itens: ItemOportunidadePaginada[] = linhas.slice(0, 20).map((row) => ({
+    oportunidade: { ...row.oportunidade, favorito: row.favorito,
+      dataPublicacao: row.oportunidade.dataPublicacao ?? "",
+      dataAbertura: row.oportunidade.dataAbertura ?? "" },
+    match: row.match ?? undefined,
+    favorito: row.favorito,
+  }));
+  return { itens, pagina, tamanhoPagina: 20 as const, temAnterior: pagina > 1, temProxima: linhas.length > 20 };
+}
+
+export async function calcularMatchOportunidade(perfilId: string, oportunidadeId: string) {
+  const { supabase } = await obterContextoAutenticado();
+  const { data, error } = await supabase.rpc("calcular_match_oportunidade_v1", {
+    p_perfil_id: perfilId,
+    p_oportunidade_id: oportunidadeId,
+  });
+  if (error) throw new Error("Não foi possível calcular a aderência.");
+  return (data as OpportunityMatch | null) ?? undefined;
+}
+
+// O contador não depende da página nem do limite de linhas da Data API.
+export async function obterResumoOportunidades() {
+  const { supabase } = await obterContextoAutenticado();
+  const [contagem, primeira] = await Promise.all([
+    supabase.from("oportunidades_editais").select("id", { count: "exact", head: true }),
+    supabase.from("oportunidades_editais")
+      .select("id, titulo, orgao, cidade, uf, objeto, valor_estimado, data_abertura")
+      .order("data_abertura", { ascending: true }).order("id", { ascending: true })
+      .limit(1).maybeSingle(),
+  ]);
+  if (contagem.error || primeira.error) throw new Error("Não foi possível carregar o resumo.");
+  const row = primeira.data;
+  return {
+    total: contagem.count ?? 0,
+    proxima: row ? { id: String(row.id), titulo: String(row.titulo), orgao: String(row.orgao),
+      cidade: String(row.cidade), uf: String(row.uf), objeto: String(row.objeto),
+      valorEstimado: Number(row.valor_estimado), dataAbertura: String(row.data_abertura) } : undefined,
+  };
 }

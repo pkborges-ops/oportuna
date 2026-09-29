@@ -16,9 +16,8 @@ import {
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
 import { obterApresentacaoOrigem } from "@/lib/oportunidades/apresentacao-origem";
 import { buscarAnalisePorPerfil } from "@/services/analises-service";
-import { buscarOportunidadePorId } from "@/services/oportunidades-service";
+import { buscarOportunidadePorId, calcularMatchOportunidade } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
-import { calcularMatch } from "@/lib/matching/calcular-match";
 import {
   lerContexto,
   montarDestino,
@@ -198,7 +197,7 @@ export default async function DetalheOportunidadePage({
   };
   const destino = montarDestino(contexto, `/oportunidades/${oportunidade.id}`);
   const match = perfilSelecionado
-    ? calcularMatch({ perfil: perfilSelecionado, oportunidade })
+    ? await calcularMatchOportunidade(perfilSelecionado.id, oportunidade.id)
     : undefined;
   const analise = perfilSelecionado
     ? await buscarAnalisePorPerfil(oportunidade.id, perfilSelecionado.id)
