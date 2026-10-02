@@ -251,7 +251,7 @@ export async function salvarConfiguracaoAlerta({
     if (erroPlano) throw new Error("Não foi possível verificar o plano.");
     if (!canReceiveAutomaticAlert(plano, true)) {
       await registrarEventoPlano(supabase, usuarioId, "tentou_ativar_alerta");
-      throw new Error("Alertas automáticos estão disponíveis no plano Pro.");
+      throw new Error("Alertas automáticos estão disponíveis nos planos pagos.");
     }
   }
   const { data: perfil, error: erroPerfil } = await supabase
@@ -288,7 +288,7 @@ export async function executarTesteAlerta(
   const { supabase, usuarioId } = await obterContextoAutenticado();
   const { data: plano, error: erroPlano } = await supabase.rpc("plano_atual_v1");
   if (erroPlano || !canReceiveAutomaticAlert(plano, true)) {
-    throw new Error("Teste de alertas disponível no plano Pro.");
+    throw new Error("Teste de alertas disponível nos planos pagos.");
   }
   const { data: alerta, error: erroAlerta } = await supabase
     .from("alertas_perfis")

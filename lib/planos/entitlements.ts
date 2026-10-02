@@ -1,7 +1,7 @@
-export type PlanCode = "FREE" | "PRO";
+import { paidPlanCode, type PlanCode } from "@/lib/planos/catalogo";
 
 export type Entitlements = Readonly<{
-  maxProfiles: number;
+  maxProfiles: number | null;
   maxFavorites: number | null;
   dailyMatchViews: number | null;
   aiAnalysisLimit: number | null;
@@ -30,10 +30,22 @@ const ENTITLEMENTS: Record<PlanCode, Entitlements> = {
     historyDays: null,
     maxUsers: 1,
   },
+  BUSINESS: {
+    // Limite comercial ainda pendente: sem teto provisório no banco.
+    maxProfiles: null,
+    maxFavorites: null,
+    dailyMatchViews: null,
+    // Franquia efetiva continua configurada por assinatura em franquia_ia.
+    aiAnalysisLimit: null,
+    alertsEnabled: true,
+    historyDays: null,
+    // Equipes não estão implementadas; nenhuma vaga extra é liberada agora.
+    maxUsers: 1,
+  },
 };
 
 export function resolvePlanCode(value: unknown): PlanCode {
-  return value === "PRO" ? "PRO" : "FREE";
+  return paidPlanCode(value) ?? "FREE";
 }
 
 export function resolveEffectivePlan(subscription?: {
@@ -41,10 +53,10 @@ export function resolveEffectivePlan(subscription?: {
   status: string;
   fim_em: string | null;
 } | null, now = new Date()): PlanCode {
-  return subscription?.plano === "PRO" &&
+  return subscription && paidPlanCode(subscription.plano) &&
     (subscription.status === "active" || subscription.status === "trial") &&
     (!subscription.fim_em || new Date(subscription.fim_em).getTime() > now.getTime())
-    ? "PRO"
+    ? paidPlanCode(subscription.plano) ?? "FREE"
     : "FREE";
 }
 

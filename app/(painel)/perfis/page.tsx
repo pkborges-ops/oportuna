@@ -41,9 +41,10 @@ export default async function PerfisPage({ searchParams }: PerfisPageProps) {
         </Link>
       </section>
 
-      {plano.codigo === "FREE" && perfis.length >= plano.entitlements.maxProfiles ? (
+      {plano.codigo === "FREE" && plano.entitlements.maxProfiles !== null &&
+        perfis.length >= plano.entitlements.maxProfiles ? (
         <UpgradePrompt titulo="Limite de perfis atingido"
-          descricao={`Seu plano ${plano.codigo === "FREE" ? "Free" : "Pro"} permite ${plano.entitlements.maxProfiles} perfil(is).`}
+          descricao={`Seu plano Free permite ${plano.entitlements.maxProfiles} perfil(is).`}
           recurso="perfis" />
       ) : null}
 
