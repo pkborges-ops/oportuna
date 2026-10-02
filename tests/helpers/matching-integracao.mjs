@@ -60,7 +60,7 @@ const { default: Listagem } =
   await import("../../app/(painel)/oportunidades/page.tsx");
 const { default: Detalhes } =
   await import("../../app/(painel)/oportunidades/[id]/page.tsx");
-const { alternarFavorito, analisarOportunidade } =
+const { alternarFavorito, analisarOportunidade, desbloquearScore } =
   await import("../../app/(painel)/oportunidades/actions.ts");
 const { listarPerfis } = await import("../../services/perfis-service.ts");
 const renderList = async (query) =>
@@ -98,6 +98,25 @@ beforeEach(() => {
   state.aiCalls = 0;
   state.rpcRows = undefined;
   state.rpcError = null;
+  state.plan = 'PRO';
+  state.scoreUnlocks = new Set();
+  state.aiReservation = 'reserva-1';
+});
+
+test("Free preserva ranking global e revela score somente após desbloqueio", async () => {
+  state.plan = "FREE";
+  const antes = await renderList({ perfilId: "p1", ordenacao: "maior_aderencia" });
+  assert.match(antes, /Software nacional/);
+  assert.match(antes, /Desbloquear score/);
+  assert.doesNotMatch(antes, /90% aderência/);
+  assert.match(await renderDetail({ perfilId: "p1" }), /Desbloquear score/);
+
+  await assert.rejects(
+    desbloquearScore(form({ oportunidadeId: "o1", perfilId: "p1", redirectTo: "/oportunidades?perfilId=p1" })),
+    (error) => error.url === "/oportunidades?perfilId=p1",
+  );
+  assert.match(await renderList({ perfilId: "p1", ordenacao: "maior_aderencia" }), /90% aderência/);
+  assert.match(await renderDetail({ perfilId: "p1" }), /90% aderência/);
 });
 
 test("lista com perfil único: nacional, score determinístico, detalhes e favoritos preservam filtros", async () => {

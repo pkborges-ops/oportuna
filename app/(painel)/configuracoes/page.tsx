@@ -12,6 +12,8 @@ import {
   salvarAlertaPerfil,
 } from "@/app/(painel)/configuracoes/actions";
 import { listarConfiguracoesAlertas } from "@/services/alertas-service";
+import { obterPlanoAtual } from "@/services/planos-service";
+import { UpgradePrompt } from "@/components/planos/upgrade-prompt";
 import type { AlertLastStatus, ProfileAlert } from "@/types";
 
 type ConfiguracoesPageProps = {
@@ -144,9 +146,10 @@ function obterMensagemResultado(alerta: ProfileAlert) {
 export default async function ConfiguracoesPage({
   searchParams,
 }: ConfiguracoesPageProps) {
-  const [{ erro, mensagem }, configuracoes] = await Promise.all([
+  const [{ erro, mensagem }, configuracoes, plano] = await Promise.all([
     searchParams,
     listarConfiguracoesAlertas(),
+    obterPlanoAtual(),
   ]);
 
   return (
@@ -200,13 +203,18 @@ export default async function ConfiguracoesPage({
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5">
+            {!plano.entitlements.alertsEnabled ? (
+              <UpgradePrompt titulo="Alertas automáticos no Pro"
+                descricao="Suas configurações antigas ficam salvas, mas não são enviadas enquanto o plano for Free."
+                recurso="alertas" />
+            ) : null}
             {configuracoes.perfis.length === 0 ? (
               <div className="rounded-md bg-slate-50 p-4 text-sm text-slate-600">
                 Cadastre um perfil de empresa para configurar alertas.
               </div>
             ) : null}
 
-            {configuracoes.perfis.map(({ perfil, alerta }) => {
+            {plano.entitlements.alertsEnabled ? configuracoes.perfis.map(({ perfil, alerta }) => {
               const statusVisual = obterStatusVisual(alerta);
               const proximaExecucao = calcularProximaExecucao(alerta);
 
@@ -330,7 +338,7 @@ export default async function ConfiguracoesPage({
                   </div>
                 </form>
               );
-            })}
+            }) : null}
           </CardContent>
         </Card>
       </section>

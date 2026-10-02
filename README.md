@@ -578,3 +578,82 @@ Sequência manual em banco de homologação:
 
 A validação no banco é pré-requisito para considerar a paridade confiável e liberar
 commit/publicação desta etapa. A aplicação não tenta executar a migration ao iniciar.
+
+### Planos Free e Pro (sem cobrança)
+
+A migration aditiva [`supabase/planos_e_permissoes_v1.sql`](supabase/planos_e_permissoes_v1.sql)
+depende das migrations de perfis, favoritos, análises, alertas e oportunidades V2.
+Em um projeto isolado criado para homologar oportunidades, confira se
+`public.alertas_perfis` e `public.alertas_envios` existem; se não, execute
+[`supabase/alertas_email.sql`](supabase/alertas_email.sql) primeiro. A migration
+de planos verifica essas dependências antes de criar qualquer tabela.
+Ela **não é executada por build, testes, workflow ou aplicação**. Homologar antes;
+em produção, aplicar e validar manualmente antes de publicar o código desta etapa.
+Nenhum pagamento ou preço foi definido. Cada assinatura pertence a um usuário do
+Supabase Auth; não há organização nem múltiplos usuários por conta. Sem registro
+ou com assinatura inativa/vencida, o plano efetivo é Free. Um trigger cria o
+registro Free para novos usuários, sem backfill destrutivo para os antigos.
+
+| Recurso | Free | Pro |
+| --- | --- | --- |
+| Perfis de empresa | 1 | Até 3 |
+| Favoritos | 5 | Ilimitados |
+| Novos scores desbloqueados | 3 por dia | Ilimitados |
+| Análises por IA concluídas | 1 de demonstração | Franquia por assinatura; `NULL` sem teto provisório até definição comercial |
+| Alertas automáticos | Não | Sim, quando a configuração estiver ativa |
+| Histórico | Últimos 30 dias | Completo |
+
+Os limites são verificados no banco por triggers e RPCs, além das actions e da
+interface. Dados antigos acima de um limite permanecem salvos; somente novas
+inclusões são bloqueadas. O histórico Free usa o prazo final de participação
+quando válido, ou a publicação como fallback. O filtro vale em **Histórico** e
+**Todas**, na RPC e na leitura direta sob RLS. Oportunidades ativas continuam
+visíveis independentemente da data de publicação. Detalhes antigos fora da
+janela deixam de ser visíveis no Free, inclusive quando favoritados; os
+favoritos ficam armazenados e voltam a ser visíveis no Pro.
+
+O ranking global e o filtro de aderência continuam calculados antes dos 20 itens
+da página. A listagem Free não consome créditos ao abrir: a RPC mascara score e
+motivos de cada oportunidade ainda bloqueada. A ação **Desbloquear score** grava
+uma chave única por usuário, perfil, oportunidade e dia de São Paulo. Reabrir o
+mesmo score no dia não consome outra vaga. O detalhe usa a mesma autorização.
+RPCs legadas e helpers que devolviam score diretamente perdem EXECUTE para
+`authenticated` após a migration; o código do matcher não muda.
+
+Análise IA em cache não consome cota. Para gerar uma nova, a action reserva uma
+vaga com expiração de cinco minutos, evitando duas chamadas simultâneas acima da
+franquia; falhas liberam a reserva. Um trigger registra o consumo somente quando
+a análise é persistida com sucesso. O registro de consumo permanece caso a
+análise seja excluída; análises já existentes entram nesse histórico na migration.
+Inserções diretas acima do limite são bloqueadas. No Pro a franquia
+`franquia_ia` é configurada na assinatura por administrador, sem valor comercial
+definitivo nesta etapa.
+
+Configurações antigas de alertas Free **não são apagadas nem desativadas**. A
+action e o banco bloqueiam novas ativações Free. O serviço do cron lê planos com
+o cliente administrativo, pois a chamada com `CRON_SECRET` não traz cookie de
+usuário, e só processa `alerta.ativo` de um usuário Pro efetivo. Rota,
+autenticação, frequência e conteúdo dos alertas não foram alterados. O serviço
+precisa de `SUPABASE_SECRET_KEY` no ambiente do cron; telas normais continuam
+usando o cliente de usuário com RLS.
+
+`eventos_plano` guarda apenas usuário, tipo de evento e data para limites,
+tentativa de alerta, visita a planos e clique no upgrade; não há analytics
+externo. O usuário só lê e registra os próprios eventos. Assinaturas e cotas
+não podem ser editadas por usuários autenticados. Enterprise permanece como
+possível extensão do domínio, sem entitlement ou interface nesta versão.
+
+Após aplicar em homologação, executar
+[`tests/sql/planos-permissoes.sql`](tests/sql/planos-permissoes.sql) inteiro no
+SQL Editor do projeto isolado: ele cria fixtures em transação, troca para
+`authenticated` com duas identidades e termina em `ROLLBACK`. Executar também
+38 fixtures/16 normalizações anteriores antes e depois da nova migration,
+como administrador de homologação (a RPC V1 perde acesso de usuário nesta
+etapa), e repetir smoke HTTP com duas contas reais na V2 e no desbloqueio.
+O script existente de isolamento aceita `HOMOLOG_ISOLAMENTO_RPC=v2` junto das
+variáveis locais `HOMOLOG_*` para testar a V2 por HTTP sem imprimir credenciais;
+os quatro casos Conta A/B devem retornar PASS. O desbloqueio deve ser testado
+na aplicação com a conta Free, verificando que abrir a lista não consome cota.
+Medir também a latência da V2 sobre os 50.000 registros existentes. Sem
+validação real de RLS, cotas, paridade e latência no
+PostgreSQL de homologação, os testes locais não comprovam prontidão de deploy.

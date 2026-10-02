@@ -11,6 +11,8 @@ import {
 } from "@/components/ui/card";
 import { formatarData, formatarStatus } from "@/lib/formatters";
 import { listarPerfis } from "@/services/perfis-service";
+import { obterPlanoAtual } from "@/services/planos-service";
+import { UpgradePrompt } from "@/components/planos/upgrade-prompt";
 
 type PerfisPageProps = {
   searchParams: Promise<{
@@ -21,7 +23,7 @@ type PerfisPageProps = {
 
 export default async function PerfisPage({ searchParams }: PerfisPageProps) {
   const params = await searchParams;
-  const perfis = await listarPerfis();
+  const [perfis, plano] = await Promise.all([listarPerfis(), obterPlanoAtual()]);
 
   return (
     <div className="grid gap-6">
@@ -38,6 +40,12 @@ export default async function PerfisPage({ searchParams }: PerfisPageProps) {
           Novo perfil
         </Link>
       </section>
+
+      {plano.codigo === "FREE" && perfis.length >= plano.entitlements.maxProfiles ? (
+        <UpgradePrompt titulo="Limite de perfis atingido"
+          descricao={`Seu plano ${plano.codigo === "FREE" ? "Free" : "Pro"} permite ${plano.entitlements.maxProfiles} perfil(is).`}
+          recurso="perfis" />
+      ) : null}
 
       <section className="grid gap-4">
         {params.erro ? (

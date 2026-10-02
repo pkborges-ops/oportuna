@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { gerarAnaliseOportunidade } from "@/lib/openai/analise-oportunidade";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
+import { registrarEventoPlano } from "@/lib/planos/eventos";
 import { buscarOportunidadePorId } from "@/services/oportunidades-service";
 import { buscarPerfilPorId } from "@/services/perfis-service";
 
@@ -73,11 +74,33 @@ export async function alternarFavorito(formData: FormData) {
   );
 
   if (error) {
+    if (error.message.includes("Limite de favoritos")) {
+      await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_favoritos");
+      redirecionarComErro(redirectTo, "Você atingiu o limite de 5 favoritos do plano Free.");
+    }
     redirecionarComErro(redirectTo, "Nao foi possivel atualizar o favorito.");
   }
 
   revalidatePath("/dashboard");
   revalidatePath("/favoritos");
+  revalidatePath("/oportunidades");
+  revalidatePath(`/oportunidades/${oportunidadeId}`);
+  redirect(redirectTo);
+}
+
+export async function desbloquearScore(formData: FormData) {
+  const oportunidadeId = obterCampoObrigatorio(formData, "oportunidadeId");
+  const perfilId = obterCampoObrigatorio(formData, "perfilId");
+  const redirectTo = obterDestinoSeguro(formData.get("redirectTo"));
+  const { supabase, usuarioId } = await obterContextoAutenticado();
+  const { data, error } = await supabase.rpc("desbloquear_score_v1", {
+    p_perfil_id: perfilId, p_oportunidade_id: oportunidadeId,
+  });
+  if (error) redirecionarComErro(redirectTo, "Não foi possível desbloquear o score.");
+  if (!data) {
+    await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_score");
+    redirecionarComErro(redirectTo, "Limite de 3 novos scores por dia atingido no plano Free.");
+  }
   revalidatePath("/oportunidades");
   revalidatePath(`/oportunidades/${oportunidadeId}`);
   redirect(redirectTo);
@@ -107,16 +130,21 @@ export async function analisarOportunidade(formData: FormData) {
     redirect(`${redirectTo}&mensagem=Analise existente reutilizada.`);
   }
 
-  const [oportunidade, perfil] = await Promise.all([
-    buscarOportunidadePorId(oportunidadeId),
-    buscarPerfilPorId(perfilId),
-  ]);
-
-  if (!oportunidade || !perfil) {
-    redirecionarComErro(redirectTo, "Perfil ou oportunidade invalida.");
+  const { data: reserva, error: erroReserva } = await supabase.rpc("reservar_analise_ia_v1", {
+    p_perfil_id: perfilId, p_oportunidade_id: oportunidadeId,
+  });
+  if (erroReserva) redirecionarComErro(redirectTo, "Não foi possível reservar a análise.");
+  if (!reserva) {
+    await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_ia");
+    redirecionarComErro(redirectTo, "Limite de análises por IA atingido ou análise em andamento.");
   }
 
   try {
+    const [oportunidade, perfil] = await Promise.all([
+      buscarOportunidadePorId(oportunidadeId),
+      buscarPerfilPorId(perfilId),
+    ]);
+    if (!oportunidade || !perfil) throw new Error("Perfil ou oportunidade invalida.");
     const analise = await gerarAnaliseOportunidade({ oportunidade, perfil });
 
     const { error } = await supabase.from("analises_oportunidades").insert({
@@ -129,15 +157,15 @@ export async function analisarOportunidade(formData: FormData) {
       pontos_atencao: analise.pontos_atencao,
     });
 
-    if (error) {
-      redirecionarComErro(redirectTo, "Nao foi possivel salvar a analise.");
-    }
+    if (error) throw new Error("Nao foi possivel salvar a analise.");
   } catch (error) {
     const mensagem =
       error instanceof Error
         ? error.message
         : "Nao foi possivel gerar a analise por IA.";
     redirecionarComErro(redirectTo, mensagem);
+  } finally {
+    await supabase.rpc("liberar_reserva_ia_v1", { p_reserva_id: reserva });
   }
 
   revalidatePath(`/oportunidades/${oportunidadeId}`);

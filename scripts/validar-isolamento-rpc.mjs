@@ -9,6 +9,10 @@ const falhas = mensagem => ROTULOS.map(caso => ({ caso, status: 'FAIL', mensagem
 
 function configurar(env) {
   const erros = [];
+  const rpc = env.HOMOLOG_ISOLAMENTO_RPC === 'v2'
+    ? 'listar_oportunidades_paginadas_v2' : 'listar_oportunidades_paginadas_v1';
+  if (env.HOMOLOG_ISOLAMENTO_RPC && !['v1', 'v2'].includes(env.HOMOLOG_ISOLAMENTO_RPC))
+    erros.push('HOMOLOG_ISOLAMENTO_RPC deve ser v1 ou v2');
   const key = env.HOMOLOG_SUPABASE_PUBLISHABLE_KEY?.trim();
   if (env.HOMOLOG_SUPABASE_URL && env.HOMOLOG_SUPABASE_URL !== ORIGEM) erros.push('HOMOLOG_SUPABASE_URL deve apontar ao projeto de homologação fixado no script');
   // Aceita exclusivamente a chave publicável moderna; rejeita JWT e sb_secret_.
@@ -28,7 +32,7 @@ function configurar(env) {
   if (contas[0].email && contas[0].email.toLowerCase() === contas[1].email?.toLowerCase()) erros.push('as contas A e B precisam ter emails distintos');
   if (contas[0].perfil && contas[0].perfil === contas[1].perfil) erros.push('os perfis A e B precisam ter UUIDs distintos');
   if (erros.length) return { erros };
-  return { key, contas };
+  return { key, contas, rpc };
 }
 
 // Não retorna mensagens/corpos externos para o terminal, mesmo em erros de rede.
@@ -74,17 +78,18 @@ async function autenticar(fetchImpl, key, conta) {
   return { token, id: usuario.data.id };
 }
 
-function paginaValida(r) {
+function paginaValida(r, rpc) {
   return r.status === 200 && Array.isArray(r.data) && r.data.length > 0 && r.data.length <= 21 && r.data.every(row =>
     UUID.test(row?.oportunidade?.id ?? '') && typeof row.favorito === 'boolean' &&
-    Number.isInteger(row.match?.score) && row.match.score >= 0 && row.match.score <= 100 &&
-    row.match.nivel === (row.match.score >= 70 ? 'alta' : row.match.score >= 40 ? 'media' : 'baixa'));
+    (rpc === 'listar_oportunidades_paginadas_v2' && row.match === null ||
+      Number.isInteger(row.match?.score) && row.match.score >= 0 && row.match.score <= 100 &&
+      row.match.nivel === (row.match.score >= 70 ? 'alta' : row.match.score >= 40 ? 'media' : 'baixa')));
 }
 
 export async function validarIsolamento(env = process.env, fetchImpl = globalThis.fetch) {
   const config = configurar(env);
   if (config.erros) return falhas(`Não executado: ${config.erros.join('; ')}.`);
-  const { key, contas } = config;
+  const { key, contas, rpc } = config;
   const sessoes = [];
   for (const conta of contas) {
     try {
@@ -119,16 +124,16 @@ export async function validarIsolamento(env = process.env, fetchImpl = globalThi
     try {
       // GET de função STABLE: PostgREST executa em transação somente leitura.
       respostas.push(await requisitar(fetchImpl, key,
-        `/rest/v1/rpc/listar_oportunidades_paginadas_v1?p_perfil_id=${contas[perfil].perfil}&p_ordenacao=recomendadas&p_pagina=1`, sessoes[conta].token));
+        `/rest/v1/rpc/${rpc}?p_perfil_id=${contas[perfil].perfil}&p_ordenacao=recomendadas&p_pagina=1${rpc.endsWith('_v2') ? '&p_visao=ativas' : ''}`, sessoes[conta].token));
     } catch {
       respostas.push(null);
     }
   }
-  const controlesValidos = [0, 2].every(i => respostas[i] && paginaValida(respostas[i]));
+  const controlesValidos = [0, 2].every(i => respostas[i] && paginaValida(respostas[i], rpc));
   return respostas.map((r, i) => {
     const proprio = i === 0 || i === 2;
     const bloqueado = r?.status === 403 && r.data?.code === '42501' && r.data?.message === 'Perfil indisponível';
-    const passou = proprio ? Boolean(r && paginaValida(r)) : controlesValidos && bloqueado;
+    const passou = proprio ? Boolean(r && paginaValida(r, rpc)) : controlesValidos && bloqueado;
     let mensagem;
     if (passou) mensagem = proprio ? 'Perfil próprio retornou página válida com matching.' : 'Perfil alheio rejeitado explicitamente pela RPC.';
     else if (!r) mensagem = 'Erro de rede, timeout ou resposta inválida; isolamento não comprovado.';

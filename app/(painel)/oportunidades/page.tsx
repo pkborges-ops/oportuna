@@ -4,7 +4,8 @@ import {
 } from "@/lib/matching/ordenar-oportunidades";
 import Link from "next/link";
 
-import { alternarFavorito } from "@/app/(painel)/oportunidades/actions";
+import { alternarFavorito, desbloquearScore } from "@/app/(painel)/oportunidades/actions";
+import { UpgradePrompt } from "@/components/planos/upgrade-prompt";
 import { Button, buttonClassName } from "@/components/ui/button";
 import {
   Card,
@@ -19,6 +20,7 @@ import { BadgeSituacao } from "@/components/oportunidades/situacao";
 import { formatarData, formatarMoeda, formatarStatus } from "@/lib/formatters";
 import { listarOportunidadesPaginadas } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
+import { obterPlanoAtual } from "@/services/planos-service";
 import {
   BadgeAderencia,
   MotivosAderencia,
@@ -42,7 +44,7 @@ export default async function OportunidadesPage({
   searchParams,
 }: OportunidadesPageProps) {
   const params = lerContexto(await searchParams);
-  const perfis = await listarPerfis();
+  const [perfis, plano] = await Promise.all([listarPerfis(), obterPlanoAtual()]);
   const perfil = selecionarPerfil(perfis, params.perfilId);
   const contexto = {
     ...params,
@@ -79,6 +81,11 @@ export default async function OportunidadesPage({
             </Link>
           ))}
         </nav>
+        {plano.codigo === "FREE" && params.visao !== "ativas" ? (
+          <UpgradePrompt titulo="Histórico limitado no Free"
+            descricao="Você pode consultar oportunidades históricas dos últimos 30 dias."
+            recurso="historico" />
+        ) : null}
         <form action="/oportunidades" className="grid gap-5">
           <input type="hidden" name="visao" value={params.visao} />
           <label className="grid w-full gap-2 text-sm font-medium text-slate-700 lg:max-w-2xl">
@@ -197,6 +204,14 @@ export default async function OportunidadesPage({
             {params.erro}
           </div>
         ) : null}
+        {plano.codigo === "FREE" && params.erro?.includes("favoritos") ? (
+          <UpgradePrompt titulo="Limite de favoritos" descricao="Seu plano Free permite 5 favoritos."
+            recurso="favoritos" />
+        ) : null}
+        {plano.codigo === "FREE" && params.erro?.includes("scores") ? (
+          <UpgradePrompt titulo="Limite diário de scores" descricao="Você pode desbloquear 3 novos scores por dia."
+            recurso="matching" />
+        ) : null}
 
         {resultados.length === 0 ? (
           <Card>
@@ -227,6 +242,13 @@ export default async function OportunidadesPage({
             </CardHeader>
             <CardContent className="grid gap-4">
               {match ? <MotivosAderencia match={match} compacto /> : null}
+              {perfil && !match ? <form action={desbloquearScore} className="flex flex-wrap items-center gap-3">
+                <input type="hidden" name="perfilId" value={perfil.id} />
+                <input type="hidden" name="oportunidadeId" value={oportunidade.id} />
+                <input type="hidden" name="redirectTo" value={destino} />
+                <Button type="submit" variant="secondary">Desbloquear score</Button>
+                <span className="text-xs text-slate-500">Até 3 novos scores por dia no Free.</span>
+              </form> : null}
               <p className="text-sm leading-6 text-slate-600">
                 {oportunidade.objeto}
               </p>

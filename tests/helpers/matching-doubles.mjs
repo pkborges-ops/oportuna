@@ -2,7 +2,8 @@
 import { calcularMatch } from "../../lib/matching/calcular-match.ts";
 import { ordenarOportunidades } from "../../lib/matching/ordenar-oportunidades.ts";
 import { classificarSituacao } from "../../lib/oportunidades/ciclo-vida.ts";
-export const state = { tables: {}, calls: [], aiCalls: 0, rpcRows: undefined, rpcError: null };
+export const state = { tables: {}, calls: [], aiCalls: 0, rpcRows: undefined, rpcError: null,
+  plan: 'PRO', scoreUnlocks: new Set(), aiReservation: 'reserva-1' };
 export function client() {
   return {
     auth: {
@@ -10,6 +11,13 @@ export function client() {
     },
     async rpc(name, args) {
       state.calls.push({ rpc: name, args, operation: "select" });
+      if (name === 'plano_atual_v1') return { data: state.plan, error: null };
+      if (name === 'desbloquear_score_v1') {
+        state.scoreUnlocks.add(`${args.p_perfil_id}:${args.p_oportunidade_id}`);
+        return { data: true, error: null };
+      }
+      if (name === 'reservar_analise_ia_v1') return { data: state.aiReservation, error: null };
+      if (name === 'liberar_reserva_ia_v1') return { data: null, error: null };
       if (state.rpcError) return { data: null, error: state.rpcError };
       if (state.rpcRows !== undefined) return { data: state.rpcRows, error: null };
       const situacao = row => classificarSituacao(row.status, row.participacao_prazo_limite, Date.now());
@@ -24,12 +32,14 @@ export function client() {
       const toItem = row => {
         const oportunidade = { ...row, dataPublicacao:row.data_publicacao, dataAbertura:row.data_abertura,
           situacaoOperacional:situacao(row), participacao:{prazoLimite:row.participacao_prazo_limite},valorEstimado:row.valor_estimado };
-        return { oportunidade, match: perfil ? calcularMatch({perfil:{...perfil,palavrasChave:perfil.palavras_chave},oportunidade}) : null,
+        return { oportunidade, match: perfil
+          ? calcularMatch({perfil:{...perfil,palavrasChave:perfil.palavras_chave},oportunidade}) : null,
           favorito:state.tables.oportunidades_favoritos.some(f=>f.usuario_id==='u1' && f.oportunidade_id===row.id) };
       };
       if (name === 'calcular_match_oportunidade_v1') {
         const row = state.tables.oportunidades_editais.find(o=>o.id===args.p_oportunidade_id);
-        return {data:row ? toItem(row).match : null,error:null};
+        return {data:row && (state.plan==='PRO' || state.scoreUnlocks.has(`${args.p_perfil_id}:${row.id}`))
+          ? toItem(row).match : null,error:null};
       }
       let rows = state.tables.oportunidades_editais.filter(o =>
         (args.p_visao==='todas' || (args.p_visao==='historico' ? situacao(o)==='encerrada' : situacao(o)!=='encerrada')) &&
@@ -38,7 +48,10 @@ export function client() {
       rows = rows.map(toItem).filter(o=>!perfil || !args.p_aderencia || o.match.nivel===args.p_aderencia);
       rows = ordenarOportunidades(rows,args.p_ordenacao,Boolean(perfil));
       if (args.p_ordenacao==='recomendadas') rows.sort((a,b)=>Number(a.oportunidade.situacaoOperacional==='encerrada')-Number(b.oportunidade.situacaoOperacional==='encerrada'));
-      return {data: rows.slice((args.p_pagina-1)*20, (args.p_pagina-1)*20+21), error:null};
+      return {data: rows.slice((args.p_pagina-1)*20, (args.p_pagina-1)*20+21).map(item=>({
+        ...item, match:state.plan==='PRO' || state.scoreUnlocks.has(`${args.p_perfil_id}:${item.oportunidade.id}`)
+          ? item.match : null,
+      })), error:null};
     },
     from(table) {
       const filters = [];

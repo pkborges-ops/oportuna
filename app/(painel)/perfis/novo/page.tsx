@@ -8,6 +8,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { UpgradePrompt } from "@/components/planos/upgrade-prompt";
 
 type NovoPerfilPageProps = {
   searchParams: Promise<{
@@ -45,6 +46,10 @@ export default async function NovoPerfilPage({
               {params.erro}
             </div>
           ) : null}
+          {params.erro?.includes("limite") ? <div className="mb-4">
+            <UpgradePrompt titulo="Limite de perfis" descricao="Seu plano Free permite 1 perfil."
+              recurso="perfis" />
+          </div> : null}
 
           <form action={criarPerfil} className="grid gap-4 sm:grid-cols-2">
             <Input
