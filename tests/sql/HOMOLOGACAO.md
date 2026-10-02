@@ -618,3 +618,152 @@ na tabela (111,276 ms). A função de resumo passou a usar a tabela sob o mesmo
 RLS, classificando apenas o card selecionado. Depois do ajuste, a RPC mediu
 124,480 ms e 239,499 ms; retornou 40.000 ativas/a confirmar, 50.000 na base
 e um card válido. São medições SQL, não tempos HTTP.
+
+### Planos e permissões — homologação de 01/10/2026
+
+No projeto isolado `oportuna-homologacao` (`uzmgxxhiedevsxedgqij`), após a
+execução manual de `alertas_email.sql` e `planos_e_permissoes_v1.sql`, uma
+consulta somente leitura confirmou as cinco tabelas novas, RLS habilitado nas
+cinco, cinco gatilhos centrais, e a presença das RPCs V2 e de desbloqueio.
+`authenticated` executa as RPCs V2 e de desbloqueio, mas não executa a RPC V1
+nem o helper `matching_calcular_v1`.
+
+O operador informou que `tests/sql/planos-permissoes.sql` foi executado inteiro
+com sucesso no SQL Editor da homologação. O script testa cotas e isolamento sob
+duas identidades `authenticated` e termina em `ROLLBACK`; o resultado da execução
+foi informado pelo operador, não capturado por automação local.
+
+O teste HTTP real de `listar_oportunidades_paginadas_v2` foi executado com duas
+contas distintas e perfis próprios, pela chave publicável da homologação. O
+validador confirmou a identidade e a propriedade dos perfis antes das RPCs;
+as quatro respostas sanitizadas foram:
+
+| Caso | Resultado |
+|---|---|
+| Conta A / Perfil A | PASS: página própria válida |
+| Conta A / Perfil B | PASS: perfil alheio rejeitado |
+| Conta B / Perfil B | PASS: página própria válida |
+| Conta B / Perfil A | PASS: perfil alheio rejeitado |
+
+Na aplicação local ligada exclusivamente à homologação, uma conta Free real
+abriu a listagem e um detalhe com perfil selecionado; consultas de leitura em
+`score_desbloqueios` confirmaram **zero** consumo. O primeiro desbloqueio
+exibiu score, nível e motivos e elevou a contagem diária a **1**. Um segundo
+desbloqueio da mesma oportunidade com outro perfil da mesma conta e um terceiro
+desbloqueio de outra oportunidade elevaram a contagem a **3**. Uma quarta
+oportunidade inédita recebeu a mensagem “Limite de 3 novos scores por dia
+atingido no plano Free.”; o score continuou oculto. Reabrir o primeiro score
+mostrou os mesmos dados e manteve a contagem em **3**. A contagem foi feita para
+o usuário, não apenas para um perfil. A ação na interface chamou a RPC pelo
+servidor, mas ainda falta a tentativa HTTP direta autenticada acima da cota.
+
+Consultas de leitura sob `authenticated` verificaram as visões Ativas,
+Histórico e Todas sem perfil, o mascaramento de matching, filtros combinados
+com perfil e páginas distintas de `maior_aderencia`. A comparação inicial de
+todas as 21 linhas de cada página acusou uma linha em comum: a linha 21 é a
+sentinela intencional de `temProxima` e passa a ser a linha 1 da página 2.
+Repetida a comparação dos **20 cards exibidos** de cada página, não houve
+sobreposição. Nenhum dado ou função foi alterado nesse diagnóstico.
+Busca `software` + status `aberta` + UF `SC` retornou amostra não vazia com esse
+perfil. A combinação adicional com aderência `alta` retornou zero itens;
+portanto ela comprova resposta vazia, não ordenação de itens de alta aderência
+para esse perfil. O roteiro transacional de planos cobre a classificação e o
+corte global com oportunidades sintéticas controladas.
+
+A repetição integral de `tests/sql/matching-paridade.sql` na homologação foi
+informada pelo operador como `Success`, sem exceção: PASS para os 38 fixtures de
+matching, score scalar e 16 normalizações. O texto do `NOTICE` não foi capturado
+automaticamente; o roteiro abortaria com exceção em qualquer divergência.
+Os testes HTTP Free/Pro e suas medições estão registrados abaixo.
+
+Para viabilizar o teste Pro real, a segunda conta de teste (distinta da conta
+Free acima) recebeu **somente em homologação** uma linha `PRO/active` em
+`assinaturas_usuario`. O setup transacional exigiu exatamente 50.000
+oportunidades e perfis pertencentes a usuários diferentes antes de gravar; uma
+consulta posterior confirmou uma assinatura Pro ativa. Não foram alteradas
+oportunidades, desbloqueios, migrations nem dados de produção. A conta Free
+permanece no fallback Free para usuários anteriores à migration.
+
+Uma transação com `SET LOCAL ROLE authenticated` e JWT da segunda conta
+confirmou `plano_atual_v1() = PRO`, página de Recomendadas com matching visível
+e retorno verdadeiro de `desbloquear_score_v1`; terminou em `ROLLBACK`. Isso
+valida a regra no banco, mas não substitui o teste HTTP com login real Pro.
+O operador informou não ter acesso às credenciais dessa segunda conta.
+Assim, sua assinatura de setup foi restaurada para `FREE/active` na homologação;
+o teste HTTP Free/Pro foi realizado depois com a conta acessível em duas fases,
+restaurando o plano Free ao fim.
+
+O medidor HTTP final foi executado manualmente com
+`& .\scripts\medir-planos-homolog.ps1` em PowerShell na raiz do projeto. O
+roteiro pede o plano esperado, a chave publicável da homologação, e-mail/senha
+e UUID do perfil no terminal; não recebe service role e não grava esses
+valores. Foi executado primeiro com `FREE` e depois com `PRO`, após o setup
+controlado da mesma conta. A saída sanitizada fica no diretório temporário do
+usuário. Ele confirma o bloqueio da quarta tentativa diretamente na RPC no
+Free, quatro acessos no Pro e mede três chamadas de cada cenário/plano,
+incluindo status, duração, bytes e itens.
+
+Primeira execução HTTP Free do medidor: o quarto desbloqueio direto retornou
+HTTP 200 com `false` e a cota permaneceu em 3 (PASS). Recomendadas mediu
+1875,6 / 1730,5 / 1648,6 ms (média 1751,6 ms, 21 linhas, HTTP 200).
+Maior aderência mediu 1637,4 / 1638,2 / 1566,3 ms (média 1614,0 ms,
+21 linhas, HTTP 200). A primeira chamada de aderência alta retornou HTTP 200,
+lista vazia e 1296,6 ms; o medidor interrompeu a coleta porque exigia ao menos
+um item. Esse critério do medidor foi corrigido para aceitar lista vazia apenas
+nesse filtro, sem alterar a aplicação ou o banco. A rodada parcial não substitui
+as três execuções completas exigidas para os quatro cenários.
+
+Segunda execução HTTP Free completa, no mesmo perfil e nas mesmas 50.000
+oportunidades. Todas as 12 chamadas tiveram HTTP 200, PASS, sem timeout ou erro
+funcional; o bloqueio direto do quarto score foi confirmado novamente (HTTP
+200, `false`, cota permaneceu em 3). Tempos em milissegundos:
+
+| Cenário Free | Execução 1 | Execução 2 | Execução 3 | Mínimo | Máximo | Média | Mediana | Itens por chamada |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Recomendadas | 1912,0 | 1636,7 | 1530,7 | 1530,7 | 1912,0 | 1693,1 | 1636,7 | 21 |
+| Maior aderência | 1500,0 | 1579,2 | 1506,9 | 1500,0 | 1579,2 | 1528,7 | 1506,9 | 21 |
+| Aderência alta | 1351,0 | 1346,4 | 1420,2 | 1346,4 | 1420,2 | 1372,5 | 1351,0 | 0 |
+| Busca textual | 1284,3 | 1285,1 | 1321,4 | 1284,3 | 1321,4 | 1297,0 | 1285,1 | 21 |
+
+Aderência alta retorna lista vazia para este perfil; zero itens é resultado
+válido do filtro e não mede renderização de cards. As outras respostas tinham
+35.515 bytes; a lista vazia tinha 2 bytes. As 21 linhas incluem a sentinela
+de paginação, ou seja, no máximo 20 cards exibidos.
+
+Na sequência, a **mesma conta** foi promovida temporariamente a `PRO/active`
+somente na homologação; a linha de assinatura não existia antes do setup.
+Quatro chamadas diretas a `desbloquear_score_v1` retornaram HTTP 200 e `true`.
+As 12 chamadas de listagem tiveram HTTP 200, PASS, sem timeout ou erro
+funcional. Tempos em milissegundos:
+
+| Cenário Pro | Execução 1 | Execução 2 | Execução 3 | Mínimo | Máximo | Média | Mediana | Itens por chamada |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Recomendadas | 2050,3 | 1967,8 | 1777,9 | 1777,9 | 2050,3 | 1932,0 | 1967,8 | 21 |
+| Maior aderência | 1693,9 | 1670,4 | 1793,2 | 1670,4 | 1793,2 | 1719,2 | 1693,9 | 21 |
+| Aderência alta | 1636,8 | 1330,0 | 1241,5 | 1241,5 | 1636,8 | 1402,8 | 1330,0 | 0 |
+| Busca textual | 1422,2 | 1331,5 | 1330,2 | 1330,2 | 1422,2 | 1361,3 | 1331,5 | 21 |
+
+Respostas Pro com 21 linhas tinham 40.816 bytes; a lista vazia de alta tinha
+2 bytes. A diferença para Free inclui a presença do objeto de matching na
+resposta, variação normal entre chamadas e possível aquecimento; esta amostra
+não isola o custo do plano. Após o teste, a assinatura foi atualizada para
+`FREE/active` e confirmada por leitura. Isso restaura o plano efetivo, mas
+mantém a linha explícita de assinatura Free criada no setup, em vez do fallback
+sem linha anterior. Não houve alteração na massa de oportunidades.
+
+Comparação orientativa com a baseline HTTP V1 anterior (Mais novas 0,621 s,
+Aderência alta 1,494 s, Busca textual 1,789 s, Maior aderência 1,907 s;
+Recomendadas estáveis perto de 1,6–2,0 s, com uma primeira execução de
+6,556 s): as médias desta rodada Free/Pro ficaram entre 1,297 e 1,932 s.
+Não houve repetição de timeout nem da execução de 6+ s. As visões, perfis e
+payloads diferem da baseline, portanto a comparação não demonstra ganho
+causal, apenas ausência de degradação relevante nesta amostra.
+
+Validação local final: `npm test` 75/75 PASS, `npm run lint` PASS,
+`npx tsc --noEmit` PASS, `git diff --check` PASS, geradores Unicode e de
+paridade SQL em modo `--check` PASS, `npm run build` PASS. A primeira tentativa
+do teste de integração recebeu `spawnSync ... EPERM` no sandbox; repetida com
+execução permitida, passou. A primeira tentativa de build falhou por falta de
+rede para buscar Geist/Geist Mono; repetida com rede, compilou e gerou as 18
+páginas estáticas. Nenhum arquivo ou configuração foi alterado para contornar
+essas restrições.

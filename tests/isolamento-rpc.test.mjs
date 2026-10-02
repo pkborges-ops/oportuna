@@ -12,7 +12,7 @@ const env = {
 };
 const resposta = (status, data) => ({ status, json: async () => data });
 const pagina = [{ oportunidade: { id: '30000000-0000-4000-8000-000000000001' }, match: { score: 98, nivel: 'alta' }, favorito: false }];
-function simular({ cruzado, proprio, mesmoUsuario = false, falhaLogin = false } = {}) {
+function simular({ cruzado, proprio, mesmoUsuario = false, falhaLogin = false, rpc = 'v1' } = {}) {
   const chamadas = [];
   const fetch = async (url, init) => {
     chamadas.push({ url, method: init.method });
@@ -27,7 +27,7 @@ function simular({ cruzado, proprio, mesmoUsuario = false, falhaLogin = false } 
     assert.equal(init.method, 'GET');
     if (url.endsWith('/auth/v1/user')) return resposta(200, { id: usuarios[mesmoUsuario ? 0 : i] });
     if (url.includes('/perfis_empresa?')) return resposta(200, [{ id: perfis[i], usuario_id: usuarios[i] }]);
-    assert.ok(url.includes('/rpc/listar_oportunidades_paginadas_v1?'));
+    assert.ok(url.includes(`/rpc/listar_oportunidades_paginadas_${rpc}?`));
     return new URL(url).searchParams.get('p_perfil_id') === perfis[i]
       ? (proprio?.() ?? resposta(200, pagina))
       : (cruzado?.() ?? resposta(403, { code: '42501', message: 'Perfil indisponível' }));
@@ -42,6 +42,12 @@ test('isolamento: quatro PASS exigem duas identidades, propriedade e rejeição 
   assert.equal(mock.chamadas.filter(x => x.url.includes('/rpc/')).length, 4);
   assert.equal(mock.chamadas.filter(x => x.method === 'POST').length, 2);
   assert.doesNotMatch(JSON.stringify(r), /TOKEN_NAO_LOGAR|SENHA_NAO_LOGAR|REFRESH_NAO_LOGAR/);
+});
+test('isolamento V2: Free pode retornar match bloqueado e ainda rejeita perfil alheio', async () => {
+  const mock = simular({ rpc: 'v2', proprio: () => resposta(200, [{ ...pagina[0], match: null }]) });
+  const r = await validarIsolamento({ ...env, HOMOLOG_ISOLAMENTO_RPC: 'v2' }, mock.fetch);
+  assert.deepEqual(r.map(x => x.status), ['PASS', 'PASS', 'PASS', 'PASS']);
+  assert.ok(mock.chamadas.filter(x => x.url.includes('/rpc/')).every(x => x.url.includes('p_visao=ativas')));
 });
 test('isolamento: URL diferente, service role e configuração incompleta não fazem rede', async () => {
   for (const overrides of [

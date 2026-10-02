@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
+import { registrarEventoPlano } from "@/lib/planos/eventos";
 import type { CompanySize, ProfileStatus } from "@/types";
 
 const portesPermitidos: CompanySize[] = ["MEI", "ME", "EPP", "Media", "Grande"];
@@ -100,6 +101,10 @@ export async function criarPerfil(formData: FormData) {
   });
 
   if (error) {
+    if (error.message.includes("Limite de perfis")) {
+      await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_perfil");
+      redirecionarComErro(rotaErro, "Seu plano atingiu o limite de perfis. Conheça o Pro.");
+    }
     redirecionarComErro(rotaErro, "Nao foi possivel salvar o perfil.");
   }
 

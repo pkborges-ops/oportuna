@@ -5,7 +5,9 @@ import { notFound } from "next/navigation";
 import {
   alternarFavorito,
   analisarOportunidade,
+  desbloquearScore,
 } from "@/app/(painel)/oportunidades/actions";
+import { UpgradePrompt } from "@/components/planos/upgrade-prompt";
 import { Button, buttonClassName } from "@/components/ui/button";
 import {
   Card,
@@ -20,6 +22,7 @@ import type { SituacaoOperacional } from "@/lib/oportunidades/ciclo-vida";
 import { buscarAnalisePorPerfil } from "@/services/analises-service";
 import { buscarOportunidadePorId, calcularMatchOportunidade } from "@/services/oportunidades-service";
 import { listarPerfis } from "@/services/perfis-service";
+import { obterPlanoAtual } from "@/services/planos-service";
 import {
   lerContexto,
   montarDestino,
@@ -192,7 +195,7 @@ export default async function DetalheOportunidadePage({
   }
 
   const origem = obterApresentacaoOrigem(oportunidade);
-  const perfis = await listarPerfis();
+  const [perfis, plano] = await Promise.all([listarPerfis(), obterPlanoAtual()]);
   const perfilSelecionado = selecionarPerfil(perfis, query.perfilId);
   const contexto = {
     ...query,
@@ -259,6 +262,11 @@ export default async function DetalheOportunidadePage({
         </p>
       </section>
 
+      {plano.codigo === "FREE" && query.erro?.includes("favoritos") ? (
+        <UpgradePrompt titulo="Limite de favoritos" descricao="Seu plano Free permite 5 favoritos."
+          recurso="favoritos" />
+      ) : null}
+
       <Card>
         <CardHeader>
           <CardTitle>Aderência ao perfil</CardTitle>
@@ -312,6 +320,22 @@ export default async function DetalheOportunidadePage({
               Criar perfil de empresa
             </Link>
           )}
+          {perfilSelecionado && !match ? (
+            <div className="grid gap-3">
+              {query.erro?.includes("scores") ? (
+                <p className="text-sm font-medium text-red-800">{query.erro}</p>
+              ) : null}
+              <form action={desbloquearScore}>
+                <input type="hidden" name="perfilId" value={perfilSelecionado.id} />
+                <input type="hidden" name="oportunidadeId" value={oportunidade.id} />
+                <input type="hidden" name="redirectTo" value={destino} />
+                <Button type="submit" variant="secondary">Desbloquear score</Button>
+              </form>
+              {plano.codigo === "FREE" ? <UpgradePrompt titulo="Score no plano Free"
+                descricao="Você pode desbloquear até 3 novos scores por dia. O mesmo score não consome novamente hoje."
+                recurso="matching" /> : null}
+            </div>
+          ) : null}
           {match ? (
             <>
               <BadgeAderencia match={match} />
@@ -321,11 +345,11 @@ export default async function DetalheOportunidadePage({
                 {match.termosSegmentoEncontrados.join(", ") || "Nenhum"}.
               </p>
             </>
-          ) : (
+          ) : !perfilSelecionado ? (
             <p className="text-sm text-slate-600">
               Selecione um perfil para calcular aderência.
             </p>
-          )}
+          ) : null}
           <Link
             href={montarDestino(contexto)}
             className="text-sm font-semibold text-cyan-800 underline"
@@ -439,6 +463,11 @@ export default async function DetalheOportunidadePage({
               <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-800">
                 {query.erro}
               </div>
+            ) : null}
+            {plano.codigo === "FREE" && query.erro?.includes("análises") ? (
+              <UpgradePrompt titulo="Limite de análises por IA"
+                descricao="O Free inclui uma análise de demonstração."
+                recurso="ia" />
             ) : null}
             {query.mensagem ? (
               <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">

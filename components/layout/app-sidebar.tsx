@@ -12,6 +12,7 @@ const navegacao = [
   { href: "/oportunidades", label: "Oportunidades" },
   { href: "/favoritos", label: "Favoritos" },
   { href: "/configuracoes", label: "Configurações" },
+  { href: "/planos", label: "Planos" },
 ];
 
 export function AppSidebar() {

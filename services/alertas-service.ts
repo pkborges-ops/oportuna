@@ -3,6 +3,9 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { enviarEmailAlerta } from "@/lib/email/alertas-email";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
+import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
+import { canReceiveAutomaticAlert, resolveEffectivePlan } from "@/lib/planos/entitlements";
+import { registrarEventoPlano } from "@/lib/planos/eventos";
 import type {
   AlertFrequency,
   AlertHistory,
@@ -243,6 +246,14 @@ export async function salvarConfiguracaoAlerta({
   ativo: boolean;
 }) {
   const { supabase, usuarioId } = await obterContextoAutenticado();
+  if (ativo) {
+    const { data: plano, error: erroPlano } = await supabase.rpc("plano_atual_v1");
+    if (erroPlano) throw new Error("Não foi possível verificar o plano.");
+    if (!canReceiveAutomaticAlert(plano, true)) {
+      await registrarEventoPlano(supabase, usuarioId, "tentou_ativar_alerta");
+      throw new Error("Alertas automáticos estão disponíveis no plano Pro.");
+    }
+  }
   const { data: perfil, error: erroPerfil } = await supabase
     .from("perfis_empresa")
     .select("id")
@@ -275,6 +286,10 @@ export async function executarTesteAlerta(
   perfilId: string,
 ): Promise<ResultadoExecucaoAlerta> {
   const { supabase, usuarioId } = await obterContextoAutenticado();
+  const { data: plano, error: erroPlano } = await supabase.rpc("plano_atual_v1");
+  if (erroPlano || !canReceiveAutomaticAlert(plano, true)) {
+    throw new Error("Teste de alertas disponível no plano Pro.");
+  }
   const { data: alerta, error: erroAlerta } = await supabase
     .from("alertas_perfis")
     .select("id, perfil_id, email_destino, frequencia, score_minimo, ativo")
@@ -549,7 +564,9 @@ export async function executarAlertasAutomaticos({
 }: {
   forcar?: boolean;
 } = {}) {
-  const supabase = await criarClienteSupabaseServer();
+  // O cron usa CRON_SECRET na rota, sem cookie de usuário. Apenas este caminho
+  // precisa da credencial de servidor para ler alertas de todos os usuários.
+  const supabase = criarClienteSupabaseAdmin();
   const agora = new Date();
   console.info("[alertas-cron] Iniciando execucao automatica.", {
     forcar,
@@ -570,8 +587,19 @@ export async function executarAlertasAutomaticos({
     throw new Error("Nao foi possivel listar alertas ativos.");
   }
 
+  const idsUsuarios = [...new Set(((alertas ?? []) as AlertaPerfilRow[])
+    .map((alerta) => alerta.usuario_id).filter((id): id is string => Boolean(id)))];
+  const { data: assinaturas, error: erroAssinaturas } = idsUsuarios.length
+    ? await supabase.from("assinaturas_usuario")
+        .select("usuario_id, plano, status, fim_em").in("usuario_id", idsUsuarios)
+    : { data: [], error: null };
+  if (erroAssinaturas) throw new Error("Não foi possível verificar planos dos alertas.");
+  const planos = new Map((assinaturas ?? []).map((assinatura) => [
+    assinatura.usuario_id, resolveEffectivePlan(assinatura, agora),
+  ]));
   const alertasElegiveis = ((alertas ?? []) as AlertaPerfilRow[]).filter(
-    (alerta) => forcar || deveExecutarAlerta(alerta, agora),
+    (alerta) => canReceiveAutomaticAlert(planos.get(alerta.usuario_id ?? ""), alerta.ativo) &&
+      (forcar || deveExecutarAlerta(alerta, agora)),
   );
   const resultados: ResultadoExecucaoAutomatica[] = [];
   let erros = 0;
