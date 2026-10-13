@@ -1,6 +1,5 @@
 import { criarOuReutilizarCheckout } from "@/lib/billing/checkout";
-import { dadosPagadorValidos } from "@/lib/billing/validacao";
-import { paidPlanCode } from "@/lib/planos/catalogo";
+import { pedidoCheckout } from "@/lib/billing/pedido";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -11,14 +10,13 @@ export async function POST(request: Request) {
   if (error || !data.user) return new Response(null, { status: 401 });
   let form: FormData;
   try { form = await request.formData(); } catch { return new Response(null, { status: 400 }); }
-  const planCode = paidPlanCode(form.get("plan"));
+  const { planCode, pagador } = pedidoCheckout(form);
   if (!planCode) return new Response(null, { status: 400 });
-  const pagador = dadosPagadorValidos(form.get("nomePagador"), form.get("documentoPagador"));
   if (!pagador) {
-    return Response.redirect(new URL("/planos?erro=Informe%20nome%20e%20CPF%20ou%20CNPJ%20validos.", request.url), 303);
+    return Response.redirect(new URL("/planos?erro=Confira%20nome,%20CPF%20ou%20CNPJ,%20email,%20celular,%20CEP%20e%20numero%20do%20pagador.", request.url), 303);
   }
   try {
-    const checkout = await criarOuReutilizarCheckout(data.user.id, pagador.nome, pagador.documento, planCode);
+    const checkout = await criarOuReutilizarCheckout(data.user.id, pagador, planCode);
     return Response.redirect(checkout, 303);
   } catch {
     return Response.redirect(new URL(

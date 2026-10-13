@@ -1,5 +1,6 @@
 import { chamarAsaas, obterConfigAsaas } from "@/lib/billing/asaas";
-import { cobrancaPertenceAoCheckout, tokenWebhookValido } from "@/lib/billing/validacao";
+import { tokenWebhookValido } from "@/lib/billing/validacao";
+import { verificarCheckoutDaCobranca } from "@/lib/billing/webhook";
 import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
 
 const EVENTOS = new Set([
@@ -12,9 +13,7 @@ const EVENTOS = new Set([
 ]);
 
 type Payment = { id: string; status: string; subscription: string; customer: string;
-  value: number; dueDate: string; billingType: string };
-type CheckoutPayments = { data: Array<Pick<Payment, "id" | "subscription" | "customer">>;
-  hasMore: boolean };
+  value: number; dueDate: string; billingType: string; checkoutSession?: unknown };
 
 export async function POST(request: Request) {
   let config: ReturnType<typeof obterConfigAsaas>;
@@ -55,25 +54,30 @@ export async function POST(request: Request) {
         atual.customer !== recebido.customer || atual.value !== recebido.value ||
         atual.billingType !== "CREDIT_CARD") return new Response(null, { status: 503 });
       // O evento SUBSCRIPTION_CREATED pode chegar antes da cobranca. A primeira
-      // confirmacao so vincula a assinatura se o Asaas listar esta cobranca
-      // precisamente na sessao de checkout salva para este cliente.
+      // confirmacao so vincula a assinatura se a API autenticada do Asaas
+      // comprovar a sessao de checkout salva para este cliente.
       const { data: pendente, error: erroPendente } = await admin.rpc(
         "billing_checkout_pendente_v1", { p_gateway_customer_id: atual.customer },
       );
       if (erroPendente) return new Response(null, { status: 503 });
       const checkoutId = (pendente as { checkout_id?: unknown } | null)?.checkout_id;
       if (typeof checkoutId === "string") {
-        const cobranças = await chamarAsaas<CheckoutPayments>(
-          `/payments?checkoutSession=${encodeURIComponent(checkoutId)}&limit=100`,
-        );
-        if (!cobrancaPertenceAoCheckout(cobranças, atual)) {
+        if (!await verificarCheckoutDaCobranca(atual, checkoutId, chamarAsaas)) {
+          // Somente metadados de validacao; nunca payload, tokens ou dados do pagador.
+          console.error("asaas_webhook_checkout_mismatch");
           return new Response(null, { status: 503 });
         }
         checkoutVerificado = checkoutId;
       }
       // O objeto consultado na API substitui os campos financeiros do webhook.
       payload = { ...payload, payment: atual };
-    } catch { return new Response(null, { status: 503 }); }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      console.error("asaas_webhook_verification_failed", {
+        httpStatus: /^Asaas Sandbox retornou HTTP (\d{3})\.$/.exec(message)?.[1] ?? null,
+      });
+      return new Response(null, { status: 503 });
+    }
   }
   const { data, error } = await admin.rpc(
     "billing_processar_webhook_v1", { p: payload, p_checkout_verificado: checkoutVerificado },

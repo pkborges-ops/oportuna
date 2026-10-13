@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlanViewEvent } from "@/components/planos/upgrade-prompt";
+import { AssinaturaDialog } from "@/components/planos/assinatura-dialog";
 import { getPlanEntitlements } from "@/lib/planos/entitlements";
 import { paidOffer, PLAN_CATALOG, type PaidPlanCode } from "@/lib/planos/catalogo";
 import { obterConfigAsaas } from "@/lib/billing/asaas";
@@ -11,6 +12,9 @@ export default async function PlanosPage({ searchParams }: {
 }) {
   const plano = await obterPlanoAtual();
   const supabase = await criarClienteSupabaseServer();
+  const { data: { user } } = await supabase.auth.getUser();
+  const nomeConta = user?.user_metadata?.nome ?? user?.user_metadata?.full_name ?? user?.user_metadata?.name;
+  const nomeInicial = typeof nomeConta === "string" ? nomeConta.slice(0, 120) : "";
   const { data: estado, error: estadoErro } = await supabase.rpc("billing_estado_atual_v1");
   const billing = estado as { status?: string; plan_code?: PaidPlanCode; paid_until?: string } | null;
   let ambientePronto = Boolean(process.env.SUPABASE_SECRET_KEY && !estadoErro);
@@ -64,21 +68,9 @@ export default async function PlanosPage({ searchParams }: {
           {atual ? <p className="mt-4 font-semibold text-emerald-700">
             Plano atual{billing?.paid_until ? ` até ${new Date(billing.paid_until).toLocaleDateString("pt-BR")}` : ""}.
             {billing?.status ? " Gerencie a assinatura pelo suporte nesta primeira versão." : ""}
-          </p> : disponivel ? <form action="/api/billing/checkout" method="post" className="mt-4 grid gap-3">
-            <input type="hidden" name="plan" value={code} />
-            <label className="grid gap-1 text-sm">Nome do pagador
-              <input name="nomePagador" required minLength={3} maxLength={120}
-                className="rounded-md border px-3 py-2" autoComplete="name" />
-            </label>
-            <label className="grid gap-1 text-sm">CPF ou CNPJ do pagador
-              <input name="documentoPagador" required inputMode="numeric"
-                className="rounded-md border px-3 py-2" />
-            </label>
-            <button type="submit" className="rounded-md bg-cyan-700 px-4 py-2 font-semibold text-white">
-              {reutilizar ? "Continuar pagamento" : `Assinar ${PLAN_CATALOG[code].name}`}
-            </button>
-            <p className="text-xs text-slate-600">Checkout seguro hospedado pelo Asaas Sandbox. O Oportuna não recebe dados do cartão.</p>
-          </form> : <p className="mt-4 text-sm text-slate-600">
+          </p> : disponivel && oferta ? <AssinaturaDialog planCode={code} planName={oferta.name}
+            priceLabel={(oferta.priceCents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+            nomeInicial={nomeInicial} emailInicial={user?.email ?? ""} reutilizar={reutilizar} /> : <p className="mt-4 text-sm text-slate-600">
             {outroPago ? "Troca de plano requer atendimento nesta versão." : !oferta ?
               "Contratação indisponível até definição de preço e franquia." :
               ambientePronto ? "Assinatura em processamento ou revisão." : "Assinatura indisponível neste ambiente."}

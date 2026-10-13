@@ -10,7 +10,7 @@ export function validarUrlCheckout(link: string): string {
   const url = new URL(link);
   if (url.protocol !== "https:" || url.hostname !== "sandbox.asaas.com" ||
     url.port || url.username || url.password ||
-    !url.pathname.startsWith("/checkoutSession/")) {
+    !/^\/(?:000\/)?checkoutSession\//.test(url.pathname)) {
     throw new Error("URL de Checkout Sandbox invalida.");
   }
   return url.toString();
@@ -33,12 +33,51 @@ export function cobrancaPertenceAoCheckout(
       item.subscription === pagamento.subscription && item.customer === pagamento.customer);
 }
 
-export function dadosPagadorValidos(nome: unknown, documento: unknown):
-  { nome: string; documento: string } | null {
-  if (typeof nome !== "string" || typeof documento !== "string") return null;
-  const normalizado = nome.trim();
-  const digits = documento.replace(/\D/g, "");
-  if (normalizado.length < 3 || normalizado.length > 120 ||
-      ![11, 14].includes(digits.length)) return null;
-  return { nome: normalizado, documento: digits };
+export type DadosPagador = {
+  nome: string; documento: string; email: string; celular: string;
+  cep: string; numero: string; complemento?: string;
+};
+
+function digitosFormatados(valor: unknown): string | null {
+  if (typeof valor !== "string" || !/^[\d\s.()+\/-]+$/.test(valor)) return null;
+  return valor.replace(/\D/g, "");
+}
+
+function documentoValido(digits: string): boolean {
+  if (![11, 14].includes(digits.length) || /^(\d)\1+$/.test(digits)) return false;
+  const base = digits.slice(0, -2);
+  const calcular = (texto: string, pesos: number[]) => {
+    const resto = [...texto].reduce((soma, digit, i) => soma + Number(digit) * pesos[i], 0) % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  const pesos = digits.length === 11
+    ? [[10, 9, 8, 7, 6, 5, 4, 3, 2], [11, 10, 9, 8, 7, 6, 5, 4, 3, 2]]
+    : [[5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2], [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]];
+  const primeiro = calcular(base, pesos[0]);
+  return digits.endsWith(`${primeiro}${calcular(base + primeiro, pesos[1])}`);
+}
+
+export function dadosPagadorValidos(entrada: Record<string, unknown>): DadosPagador | null {
+  const { nome, documento, email, celular, cep, numero, complemento } = entrada;
+  if (typeof nome !== "string" || typeof email !== "string" || typeof numero !== "string" ||
+    (complemento !== undefined && typeof complemento !== "string")) return null;
+  const nomeLimpo = nome.trim().replace(/\s+/g, " ");
+  const documentoLimpo = digitosFormatados(documento);
+  const emailLimpo = email.trim();
+  let celularLimpo = digitosFormatados(celular);
+  if (celularLimpo?.length === 13 && celularLimpo.startsWith("55")) celularLimpo = celularLimpo.slice(2);
+  const cepLimpo = digitosFormatados(cep);
+  const numeroLimpo = numero.trim();
+  const complementoLimpo = typeof complemento === "string" ? complemento.trim() : "";
+  const inseguro = /[\u0000-\u001f\u007f<>]/;
+  if (nomeLimpo.length < 3 || nomeLimpo.length > 120 || !/\p{L}.*\p{L}/u.test(nomeLimpo) ||
+    inseguro.test(nome) || !documentoLimpo || !documentoValido(documentoLimpo) ||
+    emailLimpo.length > 254 || !/^[^\s@<>]{1,64}@(?:[a-z\d](?:[a-z\d-]{0,61}[a-z\d])?\.)+[a-z]{2,63}$/i.test(emailLimpo) ||
+    inseguro.test(email) || !celularLimpo || !/^[1-9]\d9\d{8}$/.test(celularLimpo) ||
+    !cepLimpo || !/^\d{8}$/.test(cepLimpo) || /^(\d)\1+$/.test(cepLimpo) ||
+    !/^(?:\d[\p{L}\d\s/-]{0,19}|s\/?n)$/iu.test(numeroLimpo) ||
+    complementoLimpo.length > 255 || inseguro.test(complementoLimpo)) return null;
+  return { nome: nomeLimpo, documento: documentoLimpo, email: emailLimpo,
+    celular: celularLimpo, cep: cepLimpo, numero: numeroLimpo,
+    ...(complementoLimpo ? { complemento: complementoLimpo } : {}) };
 }
