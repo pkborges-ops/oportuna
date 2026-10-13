@@ -767,3 +767,378 @@ execução permitida, passou. A primeira tentativa de build falhou por falta de
 rede para buscar Geist/Geist Mono; repetida com rede, compilou e gerou as 18
 páginas estáticas. Nenhum arquivo ou configuração foi alterado para contornar
 essas restrições.
+
+### Asaas Sandbox — preparação do E2E de 05/10/2026
+
+Ambiente: Preview da branch `feat/asaas-assinatura-pro`, ligado ao projeto
+`oportuna-homologacao` (`uzmgxxhiedevsxedgqij`). Produção não foi alterada.
+Os resultados abaixo são verificações preparatórias; **não comprovam ainda
+pagamento E2E Pro ou Business**.
+
+- `npm test`: **81/81 PASS**. A primeira execução passou em 80 testes e recebeu
+  `spawnSync EPERM` no teste que inicia um subprocesso; a repetição com execução
+  permitida passou integralmente, sem alteração de código.
+- `tests/sql/asaas-billing.sql`: **PASS**, executado integralmente no SQL Editor
+  da homologação, terminando em `ROLLBACK`. Foi adicionada somente na consulta
+  do editor uma linha de resultado antes do rollback para tornar o sucesso
+  visível. Os fixtures usam identidades, preços e pagamentos sintéticos;
+  não fazem chamadas ao Asaas nem representam os valores comerciais do E2E.
+- A suíte SQL verificou reserva/reuso de checkout, rejeição de Free como plano
+  pago, `CHECKOUT_PAID` e `SUBSCRIPTION_CREATED` sem ativação, confirmação
+  vinculada ao checkout, Pro/Business, duplicidade sem extensão de período,
+  renovação, atraso, reembolso/chargeback, isolamento e fallback Free.
+- Token inválido no webhook do Preview, com bypass da Vercel válido:
+  **HTTP 401 / PASS**, duração total aproximada **1.231 ms**, em 05/10/2026
+  por volta de 23h40 de Brasília. A requisição foi rejeitada antes do
+  processamento de eventos. Nenhum token, cookie ou credencial foi registrado.
+
+Pendentes nesta etapa: login de duas contas Free reais, checkout hospedado,
+pagamento aprovado/recusado no Sandbox, entrega real de `PAYMENT_CONFIRMED`,
+correlação das tabelas de billing e entitlements na aplicação; cancelamento,
+expiração e reenvio no fluxo real. A aprovação desta suíte não substitui essas
+evidências e não autoriza merge.
+
+Continuação com login real Free, em 05/10/2026, por volta de 23h41 de Brasília:
+
+- `/planos` mostrou `FREE`, Pro R$ 99,00/mês com 200 análises e Business
+  R$ 197,00/mês com 1.000 análises: PASS para configuração e apresentação.
+- Acesso direto a `/planos/retorno?estado=sucesso`, sem pagamento ou evento:
+  plano efetivo continuou `FREE`: PASS; a mensagem informa que o retorno
+  não libera acesso e que a confirmação depende do webhook financeiro.
+- Tentativa de iniciar Pro com pagador fictício: bloqueada antes do checkout
+  hospedado. O Preview redirecionou com mensagem genérica de falha.
+  Vercel registrou um POST `/api/billing/checkout` às 23h41m56s, HTTP 303,
+  duração total de 584 ms. O duplo clique não foi concluído pelo controle de
+  navegador, pois o primeiro envio navegou; **concorrência HTTP não validada**.
+- Logs do Supabase às 23h41m57s: POST
+  `/rest/v1/rpc/billing_reservar_cliente_v1` recebeu HTTP 401, com PostgreSQL
+  `42501: permission denied for function billing_reservar_cliente_v1`.
+- Consulta somente leitura confirmou `service_role` com EXECUTE nessa função;
+  `anon` e `authenticated` sem EXECUTE, como previsto. Contagens nas quatro
+  tabelas de billing permaneceram em zero. Nenhum pagamento foi realizado.
+
+A causa comprovada é a rejeição de permissão na primeira RPC administrativa;
+o valor efetivo de `SUPABASE_SECRET_KEY` no deployment não foi confirmado.
+Essa variável da Vercel é Secret/write-only, limitada ao Preview desta branch.
+Próxima etapa: conferir/reinserir a chave backend existente da homologação no
+Preview e repetir após redeploy, preservando os grants e RLS. Nenhum grant foi
+ampliado nem dado alterado para contornar o bloqueio. Pro e Business ainda
+**não estão homologados por pagamento E2E**.
+
+Continuação em 06/10/2026, por volta de 00h00 de Brasília:
+
+- O usuário atualizou `SUPABASE_SECRET_KEY`; metadados da Vercel confirmaram
+  escopo somente Preview da branch `feat/asaas-assinatura-pro` (Secret).
+  Nenhum valor de chave foi registrado.
+- Redeploy `dpl_9yNVT5TU13wsY2zR3y7u5CTiDP8K`: READY, build de 35 s,
+  mesmo commit `d8e2bc2e484b732692db8a99b4b95a65ec8129e2`, ambiente Preview.
+  Produção não foi alterada.
+- Nova tentativa Pro ultrapassou a RPC administrativa: um cliente Sandbox
+  foi criado/vinculado, com `billing_customers.status_local = ready`.
+- Logs de requisições do Asaas: `/api/v3/customers` HTTP 200;
+  POST `/api/v3/checkouts` HTTP 400. A resposta `invalid_object` exige no
+  cliente os campos `email`, `phone`, `address`, `addressNumber`, `postalCode`,
+  `province` e `city`, ausentes no cadastro criado pelo fluxo atual.
+- A reserva local contém PRO, 9.900 centavos e franquia 200, porém está
+  `uncertain`, sem checkout remoto vinculado e sem `paid_until`.
+  Contagens: 1 cliente, 1 reserva de assinatura, 0 pagamentos, 0 eventos.
+  A aplicação continua mostrando FREE, com assinatura em processamento/revisão.
+- Nenhum pagamento ou ativação de plano ocorreu. Não foram feitas novas
+  tentativas, alterações diretas nas tabelas, mudanças de grants ou migrations
+  para contornar o erro.
+
+Novo bloqueio comprovado: o fluxo cria um cliente Asaas incompleto e o envia
+como `customer` ao checkout. É necessária uma correção desse fluxo e uma
+conciliação controlada da reserva antes de retomar os pagamentos E2E.
+Completar manualmente o cliente de teste ocultaria a falha do cadastro inicial.
+A documentação oficial descreve também a coleta dos dados no checkout quando
+`customer`/`customerData` são omitidos; essa alternativa exige preservar a
+correlação segura de cliente, checkout, assinatura e confirmação financeira.
+Referência: https://docs.asaas.com/docs/como-informar-os-dados-do-cliente.
+E2E Pro/Business e cenários financeiros negativos permanecem pendentes.
+
+### Correção do cadastro do pagador — 07/10/2026
+
+- Pro e Business abrem diálogo com nome, CPF/CNPJ, e-mail, celular, CEP,
+  número e complemento opcional. Nome e e-mail vêm da conta autenticada;
+  documento não é copiado do perfil de empresa. FREE não cria checkout.
+- Validação no servidor verifica campos obrigatórios, dígitos de CPF/CNPJ,
+  formato de e-mail, celular e CEP, número e limites de tamanho. Documento,
+  celular e CEP são enviados normalizados. Erros não incluem dados pessoais.
+- Payload de cliente: `name`, `cpfCnpj`, `email`, `mobilePhone`, `postalCode`,
+  `addressNumber`, `complement` quando preenchido e `externalReference`
+  derivado do usuário autenticado no servidor. Nenhum endereço é inventado.
+- Cliente já vinculado é consultado e reutilizado pelo mesmo ID. Campos
+  diferentes são atualizados por PUT antes do checkout, após validar a
+  correspondência de `externalReference`. Falha de atualização interrompe
+  o fluxo e não cria outro cliente. Conciliação conserva proteção contra
+  duplicação de clientes.
+- Checkout continua enviando somente `customer`, sem `customerData`.
+  Preços e franquias permanecem no catálogo/configuração do servidor:
+  Pro R$ 99 / 200 análises; Business R$ 197 / 1.000 análises.
+  Webhook e regra de ativação financeira não foram modificados.
+- Validação local: **100/100 testes PASS**, lint PASS, TypeScript PASS,
+  build PASS, geradores de paridade/Unicode PASS e diff check PASS.
+  Testes cobrem campos inválidos, payload, criação/reutilização/atualização,
+  rejeição de cliente alheio, falha de atualização, adulteração de preço,
+  planos permitidos e retorno de sucesso sem ativação.
+- Revisão visual: diálogo conferido em página local com dados fictícios,
+  usando o componente renderizado e CSS compilado; não houve envio de
+  pagamento nessa revisão. Formulário em duas colunas nos campos menores,
+  com rolagem e botão de continuar, fora dos cards de planos.
+- Preview da branch atualizado e READY, mantendo proteção da Vercel.
+  Não houve novo commit, push, migration ou alteração de produção.
+- **Pendente:** confirmar no Sandbox se CEP + número bastam para preencher
+  os campos de endereço e se `mobilePhone` satisfaz o checkout. A reserva
+  `uncertain` da tentativa anterior ainda bloqueia o botão da conta Free.
+  A aprovação automática rejeitou a tentativa de encerrar somente essa
+  reserva, porque o painel mostra o rótulo `main PRODUCTION`, apesar do
+  nome/ref conhecidos de homologação. Nenhuma alteração no banco ocorreu.
+  É necessária confirmação explícita do ambiente/setup controlado ou outra
+  conta Free antes de retomar o E2E Pro. Não há evidência de pagamento ou
+  ativação com este ajuste; Business e negativos financeiros continuam
+  pendentes.
+
+### Retomada E2E Pro após autorização pontual — 07/10/2026
+
+- O usuário confirmou que `uzmgxxhiedevsxedgqij` é exclusivamente homologação
+  e autorizou encerrar apenas a reserva anterior `uncertain` sem excluir
+  cliente, histórico ou outros registros.
+- Conferência anterior: reserva PRO `uncertain`, sem checkout remoto,
+  assinatura remota ou período pago; zero pagamentos e eventos; um cliente.
+- UPDATE limitado ao ID dessa reserva, estado `uncertain`, ausência de IDs
+  remotos/período pago e ausência de pagamentos relacionados: **1 reserva
+  encerrada** em `canceled`. O registro foi mantido. Nenhum DELETE foi feito.
+- Na aplicação, plano permaneceu FREE e os botões Assinar Pro/Business
+  voltaram a ficar disponíveis. Modal real Pro mostrou R$ 99,00/mês, nome
+  e e-mail pré-preenchidos. Para o envio foram usados dados fictícios.
+- Nova tentativa às **21h36 de 07/10/2026, conforme horário exibido nos logs
+  do Asaas Sandbox**: PUT no cliente existente retornou **HTTP 400**:
+  `{"errors":[{"code":"invalid_mobilePhone","description":"O celular informado é inválido."}]}`.
+  O celular fictício passou na validação local de formato, mas foi rejeitado
+  pela validação adicional do gateway. Não houve nova chamada de criação
+  de checkout na lista de requisições observada.
+- O payload observado inclui `name`, `cpfCnpj` (mascarado pelo painel),
+  `email`, `mobilePhone`, `postalCode` e `addressNumber`; cliente existente
+  foi reutilizado no caminho PUT. Dados pessoais não são reproduzidos aqui.
+- Conferência posterior somente leitura: reserva anterior `canceled`,
+  cliente `ready` com ID remoto preservado, **1 reserva da conta**,
+  **0 pagamentos**, **0 eventos** e plano cadastrado **FREE**.
+- **Parada solicitada pelo usuário:** nenhuma nova tentativa, atualização
+  adicional de dados ou limpeza foi feita após o HTTP 400. CEP + número e
+  geração de checkout ainda não estão validados; pagamento e ativação Pro
+  permanecem pendentes. Próxima tentativa precisa de celular de teste aceito
+  pelo Sandbox. O erro não comprova exigência de campos extras de endereço.
+- Produção, migrations, merge e commits não foram alterados nesta retomada.
+
+### Cadastro mínimo aceito; bloqueio no link de checkout — 08/10/2026
+
+- Conforme autorização, repetido somente no Asaas Sandbox com o celular
+  fictício indicado pelo usuário; demais dados de pagador permaneceram
+  fictícios. Nenhum número real de terceiro foi buscado ou utilizado.
+- Logs às **07h30 de 08/10/2026, conforme horário exibido pelo Asaas**:
+  PUT no mesmo cliente remoto **HTTP 200**, seguido de POST `/api/v3/checkouts`
+  **HTTP 200**. Nenhum HTTP 400 nesta tentativa.
+- Payload PUT: nome, documento, e-mail, `mobilePhone`, `postalCode` e
+  `addressNumber`. Complemento vazio não enviado. Não foram enviados
+  `address`, `province` nem `city`. A resposta de cliente preenchia esses
+  campos automaticamente a partir do CEP, incluindo cidade/UF.
+- **CEP + número foram suficientes para criar este checkout Sandbox.**
+  `mobilePhone` foi aceito; `phone` permaneceu null na resposta do cliente,
+  sem impedir a criação. Evidência específica desta tentativa, não garantia
+  para qualquer CEP/cadastro. Nenhum novo cliente foi criado.
+- Checkout enviado com `customer` do cliente existente, sem `customerData`;
+  PRO mensal R$ 99,00, estado remoto ACTIVE, expiração configurada de 60 min.
+- **Novo bloqueio local comprovado:** o link retornado começa com
+  `https://sandbox.asaas.com/000/checkoutSession/show/`.
+  `validarUrlCheckout` exige que pathname comece com `/checkoutSession/`,
+  rejeitando esse prefixo `/000/`. Reprodução direta com o validador atual:
+  `URL de Checkout Sandbox invalida.`. A aplicação retornou erro genérico,
+  em vez de redirecionar para o checkout hospedado.
+- Consulta somente leitura posterior: evento `CHECKOUT_CREATED` processed;
+  nova reserva `checkout_pending`, checkout e link vinculados pelo webhook,
+  cliente `ready`, plano cadastrado FREE, sem período pago e zero pagamentos.
+  A reconciliação foi automática pelo fluxo existente; não houve limpeza,
+  cancelamento manual, alteração de reserva ou ativação direta.
+- Parada no bloqueio de redirecionamento. Nenhum pagamento realizado;
+  PAYMENT_CONFIRMED, ativação Pro e checkout hospedado permanecem pendentes.
+  Correção necessária: validar estritamente também o formato Sandbox
+  efetivamente retornado, mantendo HTTPS/domínio e restrição de caminho;
+  não afrouxar para qualquer URL. Nenhuma correção de código feita nesta
+  coleta. Não abrir outro checkout para contornar o bloqueio.
+- Produção, migrations, merge, commit e push não foram alterados. Resultado
+  registrado sem CPF, endereço completo, credenciais ou tokens.
+
+### Validador corrigido e retomada do mesmo checkout Pro — 08/10/2026
+
+- Alteração restrita ao caminho em `validarUrlCheckout`: aceita
+  `/checkoutSession/` e `/000/checkoutSession/`. Mantidos HTTPS, host exato
+  `sandbox.asaas.com`, ausência de porta alternativa e credenciais na URL.
+  Produção, subdomínios, outros caminhos e prefixos numéricos continuam
+  rejeitados. Regras de preço, plano, billing e webhook não foram alteradas.
+- Testes cobrem os dois formatos válidos e rejeitam produção, host falso,
+  subdomínio, HTTP, porta alternativa, credenciais, outro caminho, outro
+  prefixo numérico, prefixo duplicado e nome de caminho semelhante.
+- Validação: **111/111 testes PASS**, lint PASS, TypeScript PASS,
+  diff check PASS, build PASS. Primeiro build restrito falhou por acesso
+  negado na canonicalização de diretório pelo SWC/Windows; a repetição
+  autorizada fora dessa restrição terminou com sucesso.
+- Preview `dpl_9thjG7QvQMpqVGyVbnVAbcc9Frpg` READY, ambiente Preview,
+  publicado a partir dos arquivos locais, sem novo commit/push.
+  Somente alias da branch `feat/asaas-assinatura-pro` foi atualizado.
+- Após reload, Continuar pagamento reutilizou a reserva e abriu o checkout
+  hospedado já existente. Identificação/endereço completos, valor R$ 99,00,
+  recorrência mensal; nenhuma limpeza, novo cliente ou novo checkout.
+- Pagamento exclusivamente fictício no Sandbox: página hospedada mostrou
+  **Pagamento confirmado**. Dados de cartão não são armazenados neste
+  relatório nem pela aplicação Oportuna.
+- Retorno `estado=sucesso` mostrou **FREE / checkout_pending**, antes da
+  confirmação financeira no backend: successUrl não ativou Pro sozinha.
+- **Novo bloqueio do E2E:** logs de webhooks às 07h47, horário exibido pelo
+  Asaas em 08/10/2026, mostraram HTTP 503 nas entregas financeiras. Detalhe
+  de uma entrega confirmou evento `PAYMENT_CONFIRMED`; painel mostrou
+  configuração penalizada. Não foram feitos reenvios manuais ou mudanças
+  de configuração para contornar esse erro. Causa interna do 503 ainda
+  não comprovada; não atribuir ao token, banco ou API sem nova evidência.
+- Auditoria somente leitura: CHECKOUT_CREATED, CHECKOUT_PAID,
+  PAYMENT_CREATED e SUBSCRIPTION_CREATED registrados como processed,
+  um de cada; PAYMENT_CONFIRMED ainda ausente. Reserva `checkout_paid`,
+  ID de checkout preservado, assinatura remota ainda não vinculada,
+  franquia prevista 200, nenhum período pago, zero billing_payments;
+  assinatura de usuário permanece FREE. Nenhuma ativação foi forçada.
+- Correção e retomada do redirecionamento: PASS. **E2E Pro completo ainda
+  bloqueado pela entrega/processamento de PAYMENT_CONFIRMED.** Parada sem
+  alterar webhook/billing fora do escopo. Business e negativos financeiros
+  não foram executados nesta retomada.
+- Produção, migrations e merge não foram alterados; nenhum commit/push.
+
+### PAYMENT_CONFIRMED HTTP 503: diagnóstico e correção — 08/10/2026
+
+- Somente Preview da branch `feat/asaas-assinatura-pro`, Supabase
+  `uzmgxxhiedevsxedgqij` de homologação e Asaas Sandbox. Preservados o mesmo
+  cliente, checkout, pagamento, reserva e ID de evento. Nenhuma nova cobrança,
+  pagamento, limpeza, migration, ativação manual, commit, push ou merge.
+- Logs do Preview às 08:07 e 08:22 BRT: POST `/api/webhooks/asaas` HTTP 503.
+  A sequência de chamadas passou por `billing_evento_processado_v1`, GET da
+  cobrança no Asaas, `billing_checkout_pendente_v1` e GET da listagem filtrada
+  pelo checkout; não chegou a `billing_processar_webhook_v1`.
+- Diagnóstico sanitizado no Preview às 08:40:39 BRT comprovou a condição do
+  503: listagem retornou `hasMore=false`, `itemCount=0`, sem pagamento,
+  assinatura ou cliente correspondentes. O handler rejeitou a correlação.
+  Não houve erro de token, validação financeira inicial ou projeção de plano.
+  A razão interna de o Asaas retornar lista vazia não foi determinada; não
+  afirmar atraso de indexação como fato.
+- Antes da correção: PAYMENT_CONFIRMED ausente em `billing_webhook_events`,
+  portanto sem status local pending/error/processed. O retry estava na fila
+  Asaas, com configuração ativa e penalizada. Reserva checkout_paid, plano
+  FREE, sem assinatura remota vinculada, período pago ou billing_payment.
+- Correção restrita à correlação: usar `checkoutSession` da cobrança obtida
+  pelo GET autenticado `/payments/{id}` e compará-lo ao checkout salvo no banco.
+  Campo divergente/malformado é rejeitado, sem contornar pela listagem. Quando
+  o campo estiver ausente/null, permanece o fallback anterior de listagem,
+  exigindo pagamento, assinatura e cliente coincidentes e lista não truncada.
+  O checkout enviado no payload do webhook não é usado como prova desse vínculo.
+  Mantidas validação financeira, token, RPC transacional, RLS e idempotência.
+- O diagnóstico temporário de contagem foi substituído por logs sanitizados
+  de falha, sem payload, documento, telefone, endereço, cartão ou secrets.
+- **119/119 testes PASS**, lint PASS, TypeScript PASS, diff check PASS,
+  build PASS. Oito testes novos cobrem lista vazia com vínculo autenticado,
+  checkout divergente/malformado, fallback, erros de consulta, handler com
+  payload não confiável, valor divergente e RPC retornando retry/HTTP 503.
+- Preview corrigido `dpl_G5eqJEiMg48gWcU9uv5o2rk2C3d7` READY, target Preview,
+  publicado com arquivos locais; somente alias da branch atualizado.
+- Após publicação, o **mesmo evento** foi reenviado automaticamente pelo Asaas
+  às **08:45 BRT**. Preview registrou POST **HTTP 200** às 08:45:47;
+  `billing_webhook_events` registrou **processed**, sem erro, às
+  `2026-10-08 11:45:49.641685+00` (08:45:49 BRT).
+  Uma remoção pontual de backoff foi usada para obter o diagnóstico anterior;
+  nenhuma configuração de URL, token, eventos ou autenticação foi alterada.
+  Uma solicitação posterior de remoção de backoff não fez alteração: o Asaas
+  informou que já não havia eventos penalizados, pois a entrega havia passado.
+- Auditoria somente leitura depois da entrega: billing_payment
+  PAYMENT_CONFIRMED; billing_subscription active, assinatura remota vinculada;
+  assinaturas_usuario PRO/active; franquia IA **200**; paid_until e fim_em
+  **2026-11-08 03:00:00+00** (08/11/2026 00:00 BRT), futuros no momento da coleta.
+  A aplicação passou a exibir PRO, até 3 perfis, scores/favoritos ilimitados,
+  alertas/histórico completo e 200 análises por mês, válido até 08/11/2026.
+- successUrl anteriormente mostrou FREE/checkout_pending e continuou sem
+  ativar plano sozinha; a ativação ocorreu somente com PAYMENT_CONFIRMED
+  verificado pela API e processado pela RPC transacional.
+- Reenvios automáticos são documentados pelo Asaas para respostas diferentes
+  de HTTP 200, com intervalos progressivos e interrupção após 15 falhas:
+  https://docs.asaas.com/docs/penaliza%C3%A7%C3%A3o-de-filas
+- Resultado: **E2E Pro do pagamento existente PASS**. Esta correção não executou
+  Business nem ampliou os negativos financeiros; essas validações continuam
+  pendentes antes de declarar a integração completa pronta para produção.
+
+### E2E Business real no Asaas Sandbox — 08/10/2026
+
+- Preview `dpl_G5eqJEiMg48gWcU9uv5o2rk2C3d7`, branch
+  `feat/asaas-assinatura-pro`, Supabase de homologação
+  `uzmgxxhiedevsxedgqij`. Conta autenticada distinta da conta Pro, confirmada
+  pela comparação dos proprietários das reservas; estava FREE antes do teste.
+- Acesso isolado a `/planos/retorno?estado=sucesso` manteve FREE. A página
+  informa explicitamente que não libera acesso: successUrl não ativa plano.
+- Modal Assinar Business exibiu **R$ 197,00/mês**. Pagador e cartão
+  exclusivamente fictícios de Sandbox. Celular brasileiro fictício,
+  CEP + número aceitos; endereço restante preenchido pelo Asaas.
+  Nenhum dado de cartão foi enviado ao Oportuna ou salvo neste relatório.
+- Checkout hospedado mostrou Oportuna Business mensal, recorrência mensal e
+  total R$ 197,00; pagamento aprovado. Antes do pagamento: reserva BUSINESS,
+  checkout_pending, valor 19700 centavos, franquia prevista 1000, plano efetivo
+  FREE e uma assinatura em curso. Não houve limpeza ou ativação manual.
+- `PAYMENT_CONFIRMED` entregue com **HTTP 200** às **11:05 BRT**;
+  confirmação financeira no banco em `2026-10-08 14:05:05.525674+00`.
+  Evento registrado uma vez em `billing_webhook_events`, **processed**, erro null.
+- Depois do webhook: billing_payment PAYMENT_CONFIRMED, billing_subscription
+  BUSINESS/active, assinaturas_usuario BUSINESS, franquia **1000**, paid_until
+  e fim_em **2026-11-08 03:00:00+00** (08/11/2026 00:00 BRT). Aplicação exibiu
+  BUSINESS, 1000 análises por mês, R$ 197,00 e validade até 08/11/2026.
+  Business não foi projetado como Pro.
+- **Idempotência E2E PASS:** reentrega manual do MESMO PAYMENT_CONFIRMED pelo
+  painel Asaas às **11:06 BRT**, novamente **HTTP 200**. Após reentrega,
+  paid_until/fim_em idênticos, um billing_payment, um evento persistido e uma
+  assinatura em curso. Nenhuma segunda cobrança/assinatura foi criada.
+- **Isolamento PASS:** conta Pro comparada antes/depois permaneceu PRO/active,
+  franquia 200, um pagamento e uma assinatura em curso; mesmo paid_until/fim_em
+  de 08/11/2026. Verificação SQL transacional com ROLLBACK, role authenticated
+  sem bypass RLS e claims de cada conta: RPC de estado retorna somente plano
+  próprio, assinatura alheia invisível, UPDATE de assinaturas/billing sem
+  permissão; billing_payments/webhook_events sem SELECT e RPC de processamento
+  sem EXECUTE para usuário comum. Nenhuma tabela foi manipulada para sucesso.
+- Segurança observada/revisada: Oportuna exibe plano e validade, sem dados de
+  cartão, token ou IDs financeiros do gateway; coleta de cartão ocorre somente
+  no checkout Asaas. Endpoint de checkout deriva usuário da sessão e preço/
+  franquia do catálogo server-side, respondendo apenas com redirecionamento.
+- Resultado do fluxo positivo Business e reentrega: **PASS**, sem erro novo.
+  Esta execução não cobre integralmente recusas, cancelamento, expiração e
+  atraso financeiro no provedor; negativos financeiros anteriores que ainda
+  não tenham evidência E2E permanecem pendentes para liberação em produção.
+- Produção, migrations, regras de plano/preço/webhook e código não alterados
+  nesta execução. Somente este relatório recebeu registro local; sem commit,
+  push ou merge.
+- Validações locais repetidas após o E2E: **119/119 testes PASS**, lint PASS,
+  TypeScript PASS, build PASS. Build local avisou ausência de configuração de
+  IA/e-mail, sem bloquear compilação; nenhuma variável foi inventada e nenhum
+  envio/geração de IA foi acionado. Diff check final: PASS.
+- Pronta para preparar commit/push e PR dos ajustes já homologados. Merge e
+  produção não autorizados nesta etapa; permanecem condicionados à revisão,
+  aos negativos financeiros pendentes e à aplicação/validação da migration
+  no ambiente de produção em etapa explicitamente autorizada.
+
+### Preparação para commit, push e PR — 13/10/2026
+
+- E2E Pro e Business positivos, idempotência e isolamento mantêm os resultados
+  registrados em 08/10/2026; nenhuma nova cobrança ou mudança de ambiente foi
+  realizada nesta preparação. `npm test` repetido: **119/119 PASS**.
+- Revisão dos arquivos versionados e novos sem secrets encontrados;
+  `.env.local` permanece ignorado e não versionado. `.env.example` contém
+  somente configuração de exemplo, sem credenciais reais.
+- A migration `supabase/asaas_assinaturas_v1.sql` permanece aplicada somente
+  em homologação, conforme os registros anteriores. Não foi executada em
+  produção e nenhuma configuração de produção foi alterada nesta etapa.
+- Pendências de E2E financeiro completo antes de liberação em produção:
+  cartão recusado, pagamento vencido, estorno, chargeback, cancelamento real
+  da recorrência e demais negativos ainda sem evidência E2E. Testes locais/SQL
+  não substituem a validação desses eventos reais no Asaas Sandbox.
+- Commit, push e PR autorizados pelo usuário; merge não autorizado.

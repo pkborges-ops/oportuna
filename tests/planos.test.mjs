@@ -8,12 +8,14 @@ import {
 const now = new Date('2026-09-30T12:00:00Z');
 const activeFree = { plano: 'FREE', status: 'active', fim_em: null };
 const activePro = { plano: 'PRO', status: 'active', fim_em: null };
+const activeBusiness = { plano: 'BUSINESS', status: 'active', fim_em: null };
 
 test('ausência de assinatura, Free e Pro respeitam elegibilidade sem apagar configuração', () => {
   const oldActiveAlert = { ativo: true };
   assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(null, now), oldActiveAlert.ativo), false);
   assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(activeFree, now), oldActiveAlert.ativo), false);
   assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(activePro, now), oldActiveAlert.ativo), true);
+  assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(activeBusiness, now), oldActiveAlert.ativo), true);
   assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(activePro, now), false), false);
   assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(activeFree, now), oldActiveAlert.ativo), false);
   assert.equal(canReceiveAutomaticAlert(resolveEffectivePlan(activePro, now), oldActiveAlert.ativo), true);
@@ -24,12 +26,17 @@ test('plano vencido ou cancelado volta a Free e limites são centralizados', () 
   assert.equal(resolveEffectivePlan({ ...activePro, status: 'canceled' }, now), 'FREE');
   assert.equal(resolveEffectivePlan({ ...activePro, fim_em: '2026-09-29T12:00:00Z' }, now), 'FREE');
   assert.equal(resolveEffectivePlan({ ...activePro, status: 'trial' }, now), 'PRO');
+  assert.equal(resolveEffectivePlan(activeBusiness, now), 'BUSINESS');
+  assert.equal(resolveEffectivePlan({ ...activeBusiness, status: 'canceled' }, now), 'FREE');
   const free = getPlanEntitlements(undefined);
   const pro = getPlanEntitlements('PRO');
+  const business = getPlanEntitlements('BUSINESS');
   assert.deepEqual([free.maxProfiles, free.maxFavorites, free.dailyMatchViews, free.aiAnalysisLimit,
     free.alertsEnabled, free.historyDays, free.maxUsers], [1, 5, 3, 1, false, 30, 1]);
   assert.deepEqual([pro.maxProfiles, pro.maxFavorites, pro.dailyMatchViews,
     pro.alertsEnabled, pro.historyDays, pro.maxUsers], [3, null, null, true, null, 1]);
+  assert.deepEqual([business.maxProfiles, business.maxFavorites, business.dailyMatchViews,
+    business.alertsEnabled, business.historyDays, business.maxUsers], [null, null, null, true, null, 1]);
 });
 
 test('migration preserva ranking V2 e protege acesso direto aos caminhos de score', () => {
