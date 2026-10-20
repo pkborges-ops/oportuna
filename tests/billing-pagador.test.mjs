@@ -163,13 +163,13 @@ test('retorno de successUrl consulta estado mas nao pode ativar plano', () => {
   const ast = ts.createSourceFile('retorno.tsx', fonte, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const imports = ast.statements.filter(ts.isImportDeclaration).map(n => n.moduleSpecifier.text);
   assert.deepEqual(imports.sort(), ['next/link', '@/lib/supabase/server', '@/services/planos-service',
-    '@/lib/planos/catalogo'].sort());
+    '@/lib/planos/catalogo', '@/lib/planos/apresentacao'].sort());
   const chamadas = [];
   const visitar = node => {
     if (ts.isCallExpression(node)) chamadas.push(node.expression.getText(ast));
     ts.forEachChild(node, visitar);
   };
   visitar(ast);
-  assert.deepEqual(chamadas.sort(), ['obterPlanoAtual', 'criarClienteSupabaseServer', 'supabase.rpc', 'paidPlanCode'].sort());
+  assert.deepEqual(chamadas.sort(), ['obterPlanoAtual', 'criarClienteSupabaseServer', 'supabase.rpc', 'mensagemDoRetorno'].sort());
   assert.match(fonte, /rpc\("billing_estado_atual_v1"\)/);
 });

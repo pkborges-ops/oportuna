@@ -118,13 +118,21 @@ npm run lint
 npm run build
 ```
 
-## Planos Free, Pro e Business com Asaas Sandbox
+## Planos Free, Pro e Business com Asaas
 
-Esta branch integra somente o Sandbox do Asaas com o Supabase de homologação
-`uzmgxxhiedevsxedgqij`. O código recusa outra combinação. Não configure a
-chave Asaas de produção e não execute `supabase/asaas_assinaturas_v1.sql` em
-produção nesta etapa. A migration preserva as migrations anteriores e deve ser aplicada **manualmente
-apenas em homologação**, depois de `planos_e_permissoes_v1.sql`.
+Sandbox usa somente o Supabase de homologação `uzmgxxhiedevsxedgqij`.
+O suporte técnico a `production` é explícito, mas fica desabilitado por padrão:
+exige `ASAAS_PRODUCTION_ENABLED=true`, URL Supabase produtiva fixada no servidor,
+chave Asaas correspondente, preços/franquias completos e ambiente do banco
+compatível. Não há fallback entre ambientes. **Não configurar chaves reais,
+aplicar SQL em produção ou habilitar produção nesta etapa.**
+Ver [checklist de produção](docs/BILLING_PRODUCAO.md).
+A migration `supabase/asaas_assinaturas_v1.sql` é reaplicável em homologação,
+depois de `planos_e_permissoes_v1.sql`, preservando registros e concessões Asaas.
+A instalação mantém `billing_configuracao.ambiente=sandbox`; só administrador
+pode escolher production antes do primeiro registro de billing. Um projeto
+Supabase é dedicado a um único ambiente; não pode ser convertido depois de
+conter clientes, assinaturas, pagamentos ou eventos.
 
 Crie uma conta separada em [Asaas Sandbox](https://sandbox.asaas.com), entre
 como administrador e gere a chave em **Integrações → Chave de API**. Guarde-a
@@ -140,6 +148,7 @@ Variáveis do servidor (não coloque valores no Git nem no chat):
 ASAAS_ENVIRONMENT=sandbox
 ASAAS_API_KEY=<chave do Sandbox>
 ASAAS_WEBHOOK_TOKEN=<mesmo authToken configurado no Webhook>
+ASAAS_PRODUCTION_ENABLED=false
 PRO_MONTHLY_PRICE=99.00
 BUSINESS_MONTHLY_PRICE=197.00
 PRO_MONTHLY_AI_LIMIT=200
@@ -164,7 +173,7 @@ franquias mensais de IA estão configuradas e a sua é maior que a Pro. A
 migration armazena `plan_code`, valor, franquia, ciclo, gateway e ambiente na
 tentativa.
 
-O fluxo é: usuário Free seleciona Pro ou Business e informa nome e CPF/CNPJ do pagador em `/planos` →
+O fluxo é: usuário Free seleciona Pro ou Business e informa dados do pagador no modal de `/planos` →
 servidor cria/reutiliza cliente e Checkout hospedado recorrente com cartão →
 retorno do navegador mostra estado pendente → webhook financeiro
 `PAYMENT_CONFIRMED`, correlacionado a cliente, assinatura, usuário e valor.
@@ -202,6 +211,23 @@ script `tests/sql/asaas-billing.sql` exercita eventos sintéticos e termina em
 teste Sandbox movimenta dinheiro real, mas notificações podem ser enviadas:
 use apenas contatos de teste autorizados. Sandbox e produção têm contas,
 chaves e URLs de API diferentes.
+
+`billing_verificar_ambiente_v1` valida o ambiente selecionado contra o banco.
+Cada operação do servidor passa por `billing_executar_v1`, com allowlist de
+operações e validação do ambiente na mesma transação. Esses helpers são somente
+de serviço; nenhuma permissão financeira foi concedida ao usuário comum.
+Endpoints de API são constantes por ambiente. Checkout aceita somente HTTPS,
+host exato e caminho permitido: `sandbox.asaas.com` no Sandbox, `asaas.com` em
+produção. Sandbox conserva `/000/checkoutSession/`; produção aceita apenas o
+caminho documentado `/checkoutSession/`. Nenhuma chamada produtiva foi feita.
+
+Validação SQL offline: instalar `@electric-sql/pglite@0.5.9` somente em pasta
+temporária e configurar `BILLING_SQL_PGLITE_PATH` para seu `dist/index.js`;
+executar `node scripts/validar-billing-sql-local.mjs`. Usa PostgreSQL em memória,
+sem URL/credencial remota: testa upgrade do schema anterior, reaplicação sem
+alterar dados, fluxos Pro/Business, RLS, idempotência e separação de ambientes.
+`tests/sql/asaas-ambientes.sql` também termina em ROLLBACK; homologar o SQL
+atualizado no projeto de teste antes de publicar o novo código Preview.
 
 ## Origem e tipo das oportunidades
 

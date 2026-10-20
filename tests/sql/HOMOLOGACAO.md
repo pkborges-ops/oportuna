@@ -1142,3 +1142,513 @@ E2E Pro/Business e cenários financeiros negativos permanecem pendentes.
   da recorrência e demais negativos ainda sem evidência E2E. Testes locais/SQL
   não substituem a validação desses eventos reais no Asaas Sandbox.
 - Commit, push e PR autorizados pelo usuário; merge não autorizado.
+
+### UX de planos e suporte explícito a ambientes — 13/10/2026
+
+- Alterações locais posteriores ao commit `f0d7986`, ainda sem commit/push.
+  Nenhum deployment, credencial real, configuração Vercel, banco Supabase ou
+  migration remota foi alterado nesta etapa. Produção NÃO habilitada.
+- `/planos`: resumo do plano efetivo, validade em Brasília e franquia da
+  assinatura quando disponível; selo Recomendado no Pro, independente do
+  destaque verde do plano atual. Preços/benefícios/ações organizados para
+  comparação, cards responsivos, pagador somente no modal. Equipes e Assistente
+  de Participação removidos da oferta visual; nenhum limite Business inventado.
+- Estados apresentados: Plano atual, Pagamento pendente, Aguardando confirmação,
+  Em processamento, Indisponível no momento e Alteração pelo suporte. Checkout
+  vencido/sem data válida não oferece retomada; nenhuma nova reserva é criada
+  por esse estado visual. Status internos não são exibidos no texto das páginas.
+- successUrl mostra Aguardando confirmação do pagamento quando o plano efetivo
+  continua Free. Nenhuma mutação de assinatura nessa página; confirmação de
+  disponibilidade depende do backend, não da query string.
+- Verificação visual dos componentes reais, hidratados em prévia localhost com
+  fixtures fictícias, sem banco/API: desktop 1280 px, preços na mesma coordenada
+  vertical; celular 390 px, cards empilhados e sem overflow horizontal; modais
+  Pro/Business abrem/fecham, com foco inicial no nome. Modal móvel cabe na largura
+  e tem rolagem vertical. Console sem erro/warning. Essa prévia NÃO é E2E de billing.
+- `sandbox`: API api-sandbox.asaas.com/v3, checkout somente sandbox.asaas.com,
+  caminhos /checkoutSession/ e /000/checkoutSession/, Supabase de homologação
+  fixo. `production`: API api.asaas.com/v3 e checkout somente asaas.com no
+  caminho documentado /checkoutSession/. HTTPS e hosts exatos, sem porta
+  alternativa/credenciais em URL; requisições autenticadas não seguem redirects.
+- Produção exige seleção explícita, `ASAAS_PRODUCTION_ENABLED=true`, chave com
+  prefixo produtivo, preços/franquias completos, URL Supabase aprovada fixada em
+  `ASAAS_PRODUCTION_SUPABASE_URL`, coincidência com NEXT_PUBLIC_SUPABASE_URL e
+  ambiente produtivo do banco. Preview não pode usar production. Sem essas
+  condições, falha fechada; sem fallback. Flag permanece desabilitada/ausente
+  localmente e false no exemplo, sem URL ou chave produtiva real configurada.
+- SQL aditivo/reaplicável: config de ambiente por banco, RLS/grants exclusivos,
+  defaults/constraints/guardas para ambos os ambientes, seleção imutável após
+  existir histórico. Banco dedicado a um só ambiente, sem mistura. Gateway
+  service-only verifica ambiente e executa operação allowlisted na MESMA
+  transação; mismatch é rejeitado antes de persistir evento. Contratos antigos
+  dos helpers permanecem, sem alterar ativação/renovação ou fórmula de matching.
+- Preservadas concessões ASAAS na reaplicação: apenas concessões pagas antigas
+  de origem SYSTEM são classificadas MANUAL. Dados/IDs/auditoria não apagados.
+  Preços/franquias continuam no catálogo/configuração, sem migration para mudar
+  valores. Reutilização de checkout valida URL no ambiente selecionado; resposta
+  da API com somente ID monta link no host oficial documentado.
+- **134/134 testes PASS** (15 novos sobre a base 119), lint PASS, TypeScript PASS,
+  build PASS e diff check PASS. Casos novos cobrem APIs/hosts por ambiente,
+  ausência de habilitação/configuração produtiva, configurações cruzadas,
+  URLs maliciosas, gateway atômico, handler com banco incompatível, estado visual,
+  successUrl e preços/benefícios/modal. Build avisou IA/e-mail ausentes sem
+  bloquear compilação; nenhum envio ou geração IA foi acionado.
+- **SQL local PASS nos dois modos**, usando PGlite 0.5.9/PostgreSQL em memória,
+  schema de teste mínimo e roles/RLS. Rodadas: upgrade da migration anterior
+  Sandbox, reaplicação com snapshots idênticos, configuração production em
+  OUTRO banco descartável vazio, fluxos Pro/Business, renovação, reentrega,
+  estorno/chargeback sintéticos, RLS e rejeição de mistura/troca de ambiente.
+  Suites terminaram em ROLLBACK, snapshots finais preservados. Não é teste em
+  Supabase produtivo nem E2E com eventos do provedor. Dependências de teste
+  instaladas somente em pasta temporária, sem mudar package.json/lock.
+- Limite da validação: novo SQL ainda NÃO reaplicado no Supabase de homologação;
+  novo código ainda NÃO publicado no Preview. Compatibilidade Sandbox foi
+  validada no upgrade local, e o Preview anterior não foi alterado. Depois da
+  revisão, atualizar SQL em homologação antes do novo Preview e repetir E2E.
+- Checklist em `docs/BILLING_PRODUCAO.md`: configuração, migration, webhook,
+  token, teste real autorizado, logs e rollback compatível. A trava global não
+  substitui bloqueio específico de novas contratações quando já houver eventos
+  de recorrências para receber.
+- Pendências: limite comercial de perfis Business e aprovação comercial final
+  dos valores produtivos; E2Es reais do provedor para recusa, vencimento,
+  estorno, chargeback e cancelamento; revisão operacional de recuperação/retry.
+  Suporte técnico de ambientes preparado; liberação produtiva ainda bloqueada.
+
+### Homologação remota da arquitetura de ambientes — 13/10/2026
+
+- Execução real no Supabase `uzmgxxhiedevsxedgqij`, projeto
+  `oportuna-homologacao`, a partir de 22h de Brasília (14/10 UTC).
+  Antes da execução: todas as linhas de billing tinham ambiente sandbox,
+  RLS ativa e nenhuma concessão paga de origem SYSTEM.
+- Aplicada a versão atual de `supabase/asaas_assinaturas_v1.sql` em transação,
+  com bloqueio das tabelas e comparação de contagem/hash integral antes e
+  depois. COMMIT somente após as assertivas de preservação e RLS passarem.
+  Preservados integralmente: 2 clientes, 3 assinaturas de billing, 4 pagamentos,
+  12 eventos, 2 concessões e 3 limites de perfis. Configuração nova: sandbox.
+  Nenhum registro anterior duplicado, apagado ou atualizado.
+- E2Es anteriores preservados: PRO ativo com franquia 200 e BUSINESS ativo
+  com franquia 1000; ambos mantêm paid_until/fim_em
+  `2026-11-08T03:00:00Z`. Nenhuma nova cobrança ou pagamento nesta etapa.
+- Suítes remotas `tests/sql/asaas-billing.sql` e
+  `tests/sql/asaas-ambientes.sql`: PASS, com ROLLBACK das fixtures.
+  Gateway financeiro autorizado para service_role e bloqueado para
+  authenticated; ambiente cruzado rejeitado antes de persistir evento.
+  Hashes do histórico real idênticos após as suítes.
+- Teste SQL remoto adicional em transação/ROLLBACK: 6 URLs inválidas
+  rejeitadas pela guarda de billing (host Production em Sandbox, host falso,
+  subdomínio falso, HTTP, porta 8443 e caminho alheio). PASS.
+- Arquivos locais aprovados enviados diretamente à Vercel como Preview,
+  sem commit/push e sem arquivos .env. Deployment
+  `dpl_DXhHnphb8ukXsr6jDpUF6kDmWyaA`: READY, target null (Preview).
+  Alias da branch atualizado:
+  https://oportuna-git-feat-asaas-assinatura-pro-pkborges-1822s-projects.vercel.app
+  . Vercel Authentication continua habilitada; nenhuma proteção desativada.
+- Conferidas somente variáveis não secretas da branch Preview:
+  NEXT_PUBLIC_SUPABASE_URL aponta para homologação; ASAAS_ENVIRONMENT=sandbox;
+  APP_BASE_URL é o alias Preview; preços 99/197 e franquias 200/1000.
+  Nenhuma chave/token recuperado das variáveis Vercel. Produção não selecionada
+  nem configurada/habilitada nesta etapa.
+- Smoke parcial real: /planos HTTP 200; nova UX publicada, Business atual
+  com franquia 1.000 e validade preservada, Pro recomendado por R$ 99,
+  Business por R$ 197. Nenhum status interno exibido.
+  Logs do novo deployment vistos no painel Vercel: zero warnings/errors/fatal
+  na janela consultada e nenhum dado de pagador/secret nas linhas retornadas.
+- `npm test` repetido nesta etapa: 134/134 PASS. Testes automatizados cobrem
+  token inválido, successUrl sem ativação, hosts/configurações cruzadas e
+  impedimento de consultar endpoint financeiro fora do ambiente.
+  Isso não substitui o teste HTTP remoto do webhook.
+- PENDENTE para concluir o smoke remoto: login manual no Asaas Sandbox
+  (sessão expirou) para reentrega do MESMO evento já pago; conta FREE no
+  Preview para abrir modal/checkout sem alterar concessões Pro/Business.
+  Token inválido via HTTP remoto ainda não verificado nesta etapa.
+  O conector de fetch protegido e o de logs retornaram 403 de autorização;
+  logs foram consultados pelo painel, sem ampliar acessos.
+- Nenhuma regressão observada nos passos concluídos. Ainda não declarar
+  smoke completo nem iniciar E2Es financeiros negativos enquanto as
+  verificações HTTP pendentes não forem concluídas. Nenhuma produção,
+  merge, commit ou push executado.
+- Arquivos desta etapa: `.env.example`, `README.md`,
+  `app/(painel)/planos/page.tsx`, `app/(painel)/planos/retorno/page.tsx`,
+  `app/api/webhooks/asaas/route.ts`, `components/planos/assinatura-dialog.tsx`,
+  `components/planos/planos-view.tsx`, `lib/billing/asaas.ts`,
+  `lib/billing/ambiente.ts`, `lib/billing/banco.ts`, `lib/billing/checkout.ts`,
+  `lib/billing/preco.ts`, `lib/billing/validacao.ts`, `lib/planos/catalogo.ts`,
+  `lib/planos/apresentacao.ts`, `supabase/asaas_assinaturas_v1.sql`,
+  `scripts/validar-billing-sql-local.mjs`, `tests/billing-ambientes.test.mjs`,
+  `tests/billing-pagador.test.mjs`, `tests/billing-webhook.test.mjs`,
+  `tests/billing.test.mjs`, `tests/planos-ux.test.mjs`, `tests/sql/asaas-billing.sql`,
+  `tests/sql/asaas-ambientes.sql`, `tests/sql/HOMOLOGACAO.md`,
+  `docs/BILLING_PRODUCAO.md`. PNCP, cron, IA e serviço de alertas não alterados.
+
+### Complemento do smoke HTTP remoto — 13/10/2026, 22h47–22h54 Brasília
+
+- Sessão Asaas Sandbox retomada pelo usuário. Reentregue o MESMO
+  PAYMENT_CONFIRMED do E2E Pro, sem novo checkout, cobrança ou pagamento.
+  Entrega às 22h47: HTTP 200, comprovado no Asaas e nos logs do deployment
+  Preview `dpl_DXhHnphb8ukXsr6jDpUF6kDmWyaA`.
+- Idempotência remota PASS: hashes integrais de clientes, assinaturas,
+  pagamentos, eventos e concessões idênticos antes/depois. Permanecem
+  2 clientes, 3 assinaturas de billing, 4 pagamentos, 12 eventos e 2 concessões.
+  Evento original continua processed, sem erro; processado_em não alterado.
+  PRO/200 e BUSINESS/1000 ativos, paid_until/fim_em preservados em
+  2026-11-08T03:00:00Z. Não houve extensão em duplicidade ou interferência
+  na outra conta.
+- Testes HTTP reais de token inválido e ausente: HTTP 401, corpo vazio.
+  Chamadas medidas às 22h51:57/58: 1.057 ms e 476 ms, respectivamente,
+  sem timeout. Nenhum evento de teste persistido no banco. Os logs do
+  Preview mostram os POSTs 200/401 e zero warnings/errors/fatal na janela
+  consultada, sem payload financeiro ou secrets nas mensagens da aplicação.
+- Foi usado somente o bypass Vercel já cadastrado. Transporte temporário
+  restrito ao usuário conforme autorização anterior; arquivo/pasta apagados
+  após o teste, com ausência confirmada. Nenhuma proteção desabilitada,
+  nenhum bypass novo criado, nenhum secret recuperado da Vercel.
+- As pendências de login Asaas, reentrega e token inválido da seção anterior
+  estão concluídas. Falta somente o smoke de modal/checkout/retorno em conta
+  FREE; a sessão da aplicação ainda era Business nesta conferência. O usuário
+  informou que entrará numa conta FREE. Não rebaixar nem alterar as duas
+  concessões existentes para esse teste.
+- Sem regressão nos passos executados. Produção permanece intacta;
+  nenhum commit, push ou merge nesta etapa. Ainda não marcar smoke completo
+  antes de concluir a pendência Free.
+
+### Recuperação do acesso Free na homologação — 14/10/2026
+
+- O cadastro não informa emailRedirectTo e o Supabase de homologação usava
+  Site URL http://localhost:3000, sem Redirect URLs adicionais. Isso explica
+  o destino local dos links anteriores; otp_expired significa link inválido
+  ou expirado e não comprova, sozinho, que a confirmação foi concluída.
+- Mediante autorização explícita do usuário, alterado SOMENTE o Site URL
+  do projeto uzmgxxhiedevsxedgqij para
+  https://oportuna-git-feat-asaas-assinatura-pro-pkborges-1822s-projects.vercel.app
+  . Salvamento confirmado no painel Supabase e valor persistido conferido
+  em 14/10. Nenhum redirect adicional, template, senha ou configuração
+  de confirmação de e-mail alterado; Vercel Authentication preservada.
+- Não apagar contas nem conceder confirmação/plano por SQL. A recuperação
+  da conta Free e seu smoke permanecem pendentes de identificação local
+  da conta e de confirmação válida. Tela de login Preview aberta ao usuário;
+  nenhum e-mail, senha ou token solicitado no chat.
+- Nenhuma configuração de produção, migration adicional, cobrança,
+  commit, push ou merge executado nesta recuperação.
+
+### Smoke Free remoto após arquitetura de ambientes — 14/10/2026
+
+- Usuário autenticou uma conta Free no Preview; plano efetivo Free confirmado
+  na aplicação. Nenhuma alteração nas contas Pro/Business para preparar o teste.
+- /planos carrega: Free R$ 0, Pro R$ 99 com 200 análises e Business R$ 197
+  com 1.000 análises. Modais Pro/Business abrem/fecham, nome/e-mail pré-preenchidos
+  conferidos somente por indicadores de presença, sem extrair valores pessoais.
+  Formulário de pagador exclusivamente no modal.
+- Testada successUrl isolada ANTES e DEPOIS do checkout: conta permanece Free;
+  mensagem Aguardando confirmação do pagamento. Nenhuma concessão criada.
+- Criado somente UM checkout Pro Sandbox, com identidade de pagador fictícia
+  e celular de teste previamente autorizado. POST /api/billing/checkout: 303;
+  redirecionamento HTTPS sandbox.asaas.com/000/checkoutSession/show/... aceito.
+  Checkout hospedado mostra Pro R$ 99,00 e recorrência mensal. CEP + número
+  foram suficientes; Asaas preencheu cidade/endereço/bairro. Sem dados de cartão
+  preenchidos, nenhum pagamento concluído e nenhuma cobrança paga nova.
+- CHECKOUT_CREATED recebido: POST /api/webhooks/asaas HTTP 200; evento processed
+  sem erro no banco. Uma reserva aberta para a conta, plano PRO, valor 9900,
+  franquia 200, paid_until NULL e zero pagamentos. Conta efetiva permanece FREE.
+  /planos mostra Pagamento pendente/Continuar pagamento e impede outra
+  contratação concorrente; nenhum status interno exibido.
+- Resultado esperado do smoke: clientes 2 -> 3, assinaturas de billing 3 -> 4,
+  eventos 12 -> 13; pagamentos continuam 4 e concessões continuam 2.
+  Hashes integrais das duas assinaturas pagas e de todas as concessões idênticos
+  ao baseline. Pro/200 e Business/1000 continuam ativos até 2026-11-08T03:00:00Z.
+  Reserva do smoke deixada pendente, com expiração prevista para
+  2026-10-14T12:44:31.989Z; nenhum cancelamento ou limpeza manual.
+- BILLING SMOKE: PASS. Separação de ambientes, token inválido/ausente e
+  idempotência mantêm as evidências remotas das seções anteriores.
+- PENDÊNCIA FUNCIONAL BLOQUEANTE encontrada ao revisar logs: dashboard da
+  conta Free falha de forma reproduzível com Não foi possível carregar o
+  resumo, digest 1909289627. PostgreSQL registra SQLSTATE 57014:
+  canceling statement due to statement timeout. Raw JSON do log confirma
+  consulta PostgREST da RPC resumo_oportunidades_ativas_v1.
+  GET pode aparecer com HTTP 200 nos logs Next.js, mas a tela mostra erro.
+- Diagnóstico somente leitura com JWT/role authenticated da MESMA conta,
+  dentro de transação encerrada em ROLLBACK: RPC retorna total 40000 e
+  totalBase 40555. Este resultado Free é filtrado pelo plano; não indica perda
+  de massa. SQL Editor não reproduz necessariamente o timeout da Data API.
+  Não foi estabelecido que a falha foi introduzida pelo billing; falta
+  investigar desempenho do resumo no fluxo HTTP autenticado Free.
+- Conforme critério do usuário, NÃO declarar homologação sem regressões
+  nem pronta para iniciar a próxima etapa antes de resolver/validar essa
+  divergência. Parado sem alterar código, timeouts, RLS ou permissões.
+  Sem migration adicional, produção, commit, push ou merge.
+
+### Otimização pontual do resumo do dashboard — 15/10/2026, homologação
+
+- Aplicado somente no projeto `uzmgxxhiedevsxedgqij` o arquivo
+  `supabase/resumo_oportunidades_ativas_otimizacao_v1.sql` (`Success. No rows
+  returned`). O nome, assinatura, JSON, regras de ciclo de vida e ordenação da
+  RPC foram preservados. A seleção visível passou a ser materializada uma vez;
+  contagem e próxima oportunidade reutilizam essa seleção, e somente o item
+  escolhido é buscado por chave primária para formar o card completo.
+- Paridade em transações `READ ONLY` com papel `authenticated` e RLS real:
+
+  | Plano | JSON antigo = novo | Total antigo/novo | totalBase antigo/novo |
+  | --- | --- | ---: | ---: |
+  | Free | Sim | 40.000 / 40.000 | 40.555 / 40.555 |
+  | Pro | Sim | 40.000 / 40.000 | 50.000 / 50.000 |
+  | Business | Sim | 40.000 / 40.000 | 50.000 / 50.000 |
+
+  A igualdade foi feita sobre o JSON inteiro, incluindo `proxima` e todos os
+  campos do card; os hashes integrais também coincidiram. As transações
+  terminaram em `ROLLBACK`. `security invoker`, `search_path=pg_catalog`, RLS
+  ativa, execução por `authenticated` e ausência de execução por `anon`
+  foram conferidos após a aplicação.
+- `EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON)` do SQL interno sob a mesma conta
+  Free: expressão anterior **3.236,987 ms**, com dois `Seq Scan` independentes
+  em `oportunidades_editais` (40.000 e 40.555 linhas visíveis), cerca de
+  25.108 blocos compartilhados e sort `top-N heapsort` de 31 KB. Expressão
+  nova **2.014,188 ms**, com um `Seq Scan` de 40.555 linhas, reutilização da
+  CTE, busca por índice primário de um item e sort `top-N heapsort` de 25 KB.
+  A CTE usou 194 blocos temporários lidos/escritos (aproximadamente 1,5 MB),
+  sem crescimento relevante do sort. A amostra do SQL Editor não substitui
+  a medição HTTP para avaliar a cauda de latência.
+- Uma execução adicional do plano novo sob conta Pro percorreu 50.000 linhas
+  visíveis e levou **8.057,958 ms** no SQL Editor, com um único `Seq Scan` e
+  242 blocos temporários. Não foi um timeout nem uma chamada HTTP, mas mostra
+  variabilidade importante; a correção não será considerada suficiente sem as
+  10 amostras HTTP por plano e a verificação de 500/57014.
+- `npm test`: 134/134 PASS; lint, `npx tsc --noEmit` e sintaxe do medidor
+  PowerShell: PASS. `npm run build` não concluiu porque o ambiente local não
+  conseguiu acessar `fonts.googleapis.com` para obter Geist/Geist Mono; não é
+  erro de SQL. Nenhum arquivo de billing, plano, política RLS ou timeout foi
+  alterado nesta correção.
+- Medição HTTP direta da RPC (`POST /rest/v1/rpc/resumo_oportunidades_ativas_v1`,
+  payload `{}`), 10 chamadas por plano, em 15/10/2026. O arquivo sanitizado
+  iniciado às 09:34:08 BRT contém Pro e Business; os 10 valores Free foram
+  registrados na saída do PowerShell exibida separadamente pelo usuário e
+  **não constam desse arquivo**. p95 calculado por interpolação linear.
+
+  | Plano | Mínimo | Média | p95 | Máximo | HTTP 500 | SQLSTATE 57014 |
+  | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Free | 2.304 ms | 3.286,1 ms | 5.868,5 ms | 7.871 ms | 0/10 | 0/10 |
+  | Pro | 2.259 ms | 3.197,1 ms | 6.427,45 ms | 8.452 ms | **1/10** | **1/10** |
+  | Business | 2.246 ms | 2.436,5 ms | 2.823,65 ms | 2.915 ms | 0/10 | 0/10 |
+
+  A primeira chamada Pro retornou HTTP 500 e SQLSTATE `57014` em 8.452 ms;
+  as outras nove retornaram HTTP 200 e `total=40000`. As 10 chamadas Free e
+  Business retornaram HTTP 200 e `total=40000`. O campo `timeout=false` do
+  medidor indica ausência de timeout **de transporte HTTP**; o SQLSTATE
+  `57014` confirma cancelamento por timeout **do banco**. Nenhuma medição foi
+  descartada. O máximo Free de 7.871 ms também ficou perto do limite de 8 s.
+- **Critério de parada atingido.** A otimização reduziu o custo do plano
+  interno e as chamadas usuais, mas ainda não elimina timeout/HTTP 500. Não
+  liberar E2Es financeiros negativos nem afirmar estabilidade do dashboard.
+  A conferência visual manual Free/Business segue pendente; a página Pro abriu
+  normalmente em uma observação, insuficiente para provar estabilidade.
+  Produção não alterada; sem commit/push/merge.
+
+### Refatoração controlada da policy de visibilidade — 19/10/2026, homologação
+
+- Aplicado **somente** no projeto `uzmgxxhiedevsxedgqij` o SQL
+  `supabase/oportunidades_rls_visibilidade_v1.sql`. A alteração atômica usa
+  `ALTER POLICY`; não modifica as funções, o billing, índices, timeout ou RLS
+  de outras tabelas. O catálogo confirmou que a policy continua limitada a
+  `authenticated` e passou a resolver `auth.uid()`, plano pago e corte de
+  30 dias em subconsultas sem dependência da linha.
+- A mesma conta de cada plano foi usada antes e depois, sob
+  `SET LOCAL ROLE authenticated` e JWT simulado em transações encerradas com
+  `ROLLBACK`. Hash do JSON completo e hash do objeto `proxima` permaneceram
+  idênticos; `total=40000` nos três planos. `totalBase`: Free `40370` antes e
+  depois; Pro/Business `50000` antes e depois. O valor Free de `40555` do
+  diagnóstico anterior não é referência fixa: o limite de 30 dias avançou.
+- `EXPLAIN (ANALYZE, BUFFERS)` de `count(*)` com RLS real apresentou três
+  InitPlans, cada um com um loop, e um Seq Scan de oportunidades. Amostras
+  únicas: Free `347,354 ms` (`40370` linhas, `12520` blocos hit), Pro
+  `297,973 ms` (`50000`, `12530` hit), Business `5097,462 ms` (`50000`,
+  `12530` hit). O pico Business confirma que o plano correto, sozinho, não
+  estabelece estabilidade de latência. Não houve evidência de sort nessa
+  contagem.
+- `pg_stat_xact_user_functions` com `track_functions=all`: na contagem,
+  `plano_atual_v1=1`, `plano_pago_v1=1`, `plano_historico_visivel_v1=0`
+  para Free, Pro e Business. Na execução da RPC real pelo SQL Editor,
+  respectivamente `2`, `2` e `0` chamadas por plano; a RPC foi chamada uma
+  vez. A quantidade é constante, não proporcional às 50 mil linhas.
+- RLS cruzada com duas contas reais simuladas por JWT e role `authenticated`:
+  Free viu 1 perfil próprio e 0 perfis da conta Pro; Pro viu 2 próprios e 0
+  da conta Free. `row_security_active` retornou `true` para oportunidades e
+  perfis nos dois contextos. Nenhum plano veio do cliente.
+- Dashboard Preview na sessão Pro: três atualizações exibiram `40000`
+  oportunidades ativas e base `50000`, sem erro visível. Free e Business
+  ainda exigem sessão própria para a conferência manual.
+- Medição HTTP real pós-policy em 19/10/2026, iniciada às 17:14:29 BRT e
+  concluída às 17:16:22 BRT: 10 chamadas autenticadas por plano para
+  `POST /rest/v1/rpc/resumo_oportunidades_ativas_v1`, payload `{}`.
+  Nenhuma medição foi descartada. p95 usa interpolação linear entre as
+  posições 9 e 10 das dez amostras ordenadas.
+
+  | Plano | Tempos individuais (ms) | Mínimo | Média | p95 | Máximo | HTTP 500 | 57014 |
+  | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+  | Free | 8782, 7658, 514, 398, 425, 420, 514, 624, 418, 415 | 398 | 2016,8 | 8276,2 | 8782 | **1/10** | **1/10** |
+  | Pro | 615, 414, 357, 769, 407, 372, 343, 329, 408, 311 | 311 | 432,5 | 699,7 | 769 | 0/10 | 0/10 |
+  | Business | 637, 337, 323, 309, 408, 408, 406, 525, 415, 414 | 309 | 418,2 | 586,6 | 637 | 0/10 | 0/10 |
+
+  As nove respostas Free bem-sucedidas e todas as Pro/Business retornaram
+  `total=40000`. A primeira Free retornou HTTP 500/SQLSTATE 57014 em 8782 ms;
+  a segunda, HTTP 200 em 7658 ms. Nenhum timeout de transporte HTTP. As
+  oito últimas Free ficaram entre 398 e 624 ms, mas não há prova de que o
+  custo inicial não se repetirá após inatividade ou reinício. **Critério
+  obrigatório não passou**: manter E2Es financeiros negativos pausados e
+  investigar a cauda Free antes de declarar o dashboard estável.
+- Verificações locais repetidas no mesmo dia: `npm test` 134/134 PASS, lint
+  PASS, TypeScript PASS, `git diff --check` PASS e build PASS. Os primeiros
+  resultados de teste/build foram limitados pelo sandbox (subprocesso Node
+  `EPERM` e acesso às fontes Geist); a repetição com essas permissões passou,
+  sem alteração de código.
+- Nenhuma alteração em produção e nenhum commit/push/merge nesta etapa.
+
+### Diagnóstico de ordem e inatividade da RPC de resumo — 19/10/2026, homologação
+
+- Medição HTTP direta e autenticada de `POST /rest/v1/rpc/resumo_oportunidades_ativas_v1`
+  com payload `{}` no projeto `uzmgxxhiedevsxedgqij`. As três contas tiveram o
+  plano efetivo conferido antes da série. Foram feitas 36 chamadas entre
+  17:22:42 e 17:38:37 BRT, sem descartar nenhuma; o arquivo local contém
+  apenas resultados sanitizados. Pausa de 0,5 s entre chamadas consecutivas.
+
+  | Ordem global | Série e ordem dos planos | Business (ms) | Pro (ms) | Free (ms) |
+  | --- | --- | --- | --- | --- |
+  | 1–9 | A: Business → Pro → Free | 7440, 622, 349 | 303, 362, 324 | 387, 407, 377 |
+  | 10–18 | B: Pro → Free → Business | 380, 310, 326 | 382, 356, 312 | 404, 329, 297 |
+  | 19–27 | C: Free → Business → Pro | 328, 318, 362 | 293, 301, 300 | 392, 399, 306 |
+
+  A primeira chamada global foi Business às 17:22:42 BRT e levou 7440 ms;
+  a duração da inatividade anterior a essa chamada não foi controlada. Nas
+  outras 26 chamadas consecutivas, o máximo foi 622 ms.
+
+- Depois de cada pausa de cinco minutos **sem chamadas da RPC pelo script**,
+  o plano indicado foi chamado três vezes. O intervalo real entre o término
+  da chamada anterior e o início da primeira seguinte foi 300,5 s nos três
+  casos. Não se pode excluir chamadas de outros clientes ao projeto durante
+  essas pausas.
+
+  | Ordem global | Primeiro plano após pausa | Horário da primeira (BRT) | Chamada 1 (ms) | Chamada 2 (ms) | Chamada 3 (ms) |
+  | --- | --- | --- | ---: | ---: | ---: |
+  | 28–30 | Business | 17:28:12 | 6888 | 773 | 619 |
+  | 31–33 | Pro | 17:33:22 | 1764 | 919 | 409 |
+  | 34–36 | Free | 17:38:27 | 7665 | 729 | 539 |
+
+- **Todas as 36 chamadas retornaram HTTP 200**, `total=40000`, sem SQLSTATE,
+  timeout de transporte ou erro funcional. `totalBase` foi 40370 em Free e
+  50000 em Pro/Business. Os picos de 7440 e 6888 ms ocorreram com Business,
+  e o de 7665 ms com Free, sempre na primeira chamada global ou após pausa;
+  as chamadas seguintes caíram rapidamente. Assim, esta rodada **não sustenta
+  uma cauda exclusiva do Free** e é compatível com efeito de primeira execução
+  após inatividade. A intensidade varia: Pro, primeiro após pausa, levou
+  1764 ms. O mecanismo exato (cache, planejamento, infraestrutura ou outro)
+  **não foi demonstrado**.
+- Nenhum plano `EXPLAIN` foi capturado para estas chamadas HTTP individuais;
+  o PostgREST expõe apenas o `Function Scan` externo. Não há dados comparáveis
+  de planning time, execution time interno, JIT, buffers ou contagem de funções
+  para a chamada lenta versus a rápida. `EXPLAIN` anterior confirmou InitPlans
+  constantes e também mostrou variabilidade em SQL, mas não identifica a causa
+  dos picos desta série. Não houve limpeza de cache nem ajuste de infraestrutura.
+- O SQLSTATE `57014` da medição anterior (Free, 8782 ms) permanece evidência de
+  timeout real, apesar de **0/36 ocorrências nesta rodada**. Picos de 7,4–7,7 s
+  ainda deixam pouca folga para o limite de 8 s; não declarar estabilidade
+  definitiva nem liberar os E2Es financeiros negativos com base apenas nesta
+  série. SQL, billing, timeout e produção permaneceram inalterados; sem
+  commit/push/merge.
+
+### Comparação HTTP discriminatória após inatividade — 19/10/2026, homologação
+
+- Uma única conta autenticada foi usada nas quatro chamadas, com a mesma
+  chave publicável e payload `{}`. O resultado sanitizado não guarda conta,
+  token, senha nem plano nominal; `totalBase=50000` indica o contexto pago da
+  conta nesta amostra. A operação simples foi a RPC existente
+  `plano_atual_v1`, no mesmo PostgREST; não foi criado endpoint ou mecanismo
+  de keep-alive. O script aguardou cinco minutos antes de A e mais cinco
+  minutos antes de B, sem chamar a RPC de resumo nesse intervalo.
+
+  | Ordem | Cenário | Horário BRT | Operação | Tempo HTTP | Status | SQLSTATE |
+  | ---: | --- | --- | --- | ---: | ---: | --- |
+  | 1 | A | 22:14:26 | `plano_atual_v1` | 1037 ms | 200 | ausente |
+  | 2 | A | 22:14:27 | `resumo_oportunidades_ativas_v1` | 6314 ms | 200 | ausente |
+  | 3 | B | 22:19:33 | `resumo_oportunidades_ativas_v1` | 6635 ms | 200 | ausente |
+  | 4 | B | 22:19:40 | `resumo_oportunidades_ativas_v1` | 1003 ms | 200 | ausente |
+
+- Em A, a RPC simples retornou resultado válido em 1037 ms, mas **não aqueceu
+  o caminho pesado o suficiente** para evitar 6314 ms no resumo iniciado
+  imediatamente depois. Em B, após 300 s de inatividade medida entre as
+  chamadas, o resumo direto levou 6635 ms e a repetição imediata caiu para
+  1003 ms. Todas as três respostas do resumo preservaram `total=40000` e
+  `totalBase=50000`; nenhuma medição foi descartada. Não houve HTTP 500,
+  SQLSTATE 57014, timeout de transporte ou erro funcional nesta pequena série.
+- **Interpretação limitada:** a operação simples também teve algum custo
+  inicial, mas a cauda de 6,3–6,6 s persistiu especificamente na primeira
+  execução do resumo após a pausa. Isso enfraquece a hipótese de que apenas
+  a conexão/compute geral explica o pico e favorece trabalho frio no caminho
+  da consulta; não demonstra se a causa interna é cache de páginas, plano,
+  JIT, compute ou outra etapa. Não foram capturados planning time, execution
+  time interno, buffers ou JIT dessas chamadas HTTP. O 57014 anterior segue
+  registrado e o limite de 8 s ainda pode ser alcançado em outra execução.
+- O diagnóstico de dashboard permanece aberto; esta frente **não bloqueia**
+  os E2Es financeiros negativos do Asaas Sandbox. SQL/RLS, billing, timeout e
+  produção não foram alterados; sem commit/push/merge.
+
+### Asaas Sandbox — tentativa de cartão recusado (parcial), 19/10/2026
+
+- Em checkout hospedado do Asaas Sandbox para Pro, a captura enviada pelo
+  usuário mostrou a mensagem **"Pagamento não autorizado"**. O cartão de
+  recusa usado não foi confirmado por evidência sanitizada do provedor; não
+  registrar número, CVV ou dados do pagador neste relatório.
+- O retorno do Preview em `/planos/retorno?estado=cancelado` exibiu **"checkout
+  cancelado"** e **plano atual Free**. Isso comprova que o retorno cancelado
+  não concedeu Pro naquela sessão.
+- O usuário apresentou o log de checkout de 19/10/2026 às 22:29 com entrega
+  HTTP 200 e o conteúdo correspondente: evento `CHECKOUT_CREATED`, checkout
+  `ACTIVE`, plano Pro mensal de R$ 99, cobrança recorrente mensal e cliente
+  existente via `customer`, com `customerData=null`. O horário é o exibido
+  pelo painel/provedor; o payload não informa fuso. IDs, link individual do
+  checkout e dados da conta não foram copiados para este relatório.
+- Na consulta manual informada pelo usuário, a categoria Cobranças com
+  período Hoje não apresentou logs. Na categoria checkout apareceu o evento
+  de criação acima; isso não comprova entrega de evento de recusa ou de
+  cancelamento, nem confirmação financeira. `ACTIVE` descreve a sessão de
+  checkout e não comprova concessão de plano.
+- **E2E ainda não concluído:** falta verificar evidência de evento financeiro
+  da recusa, se emitido, e no banco de homologação o estado da reserva,
+  pagamentos, eventos, ausência de duplicidade e preservação de histórico.
+  Não inferir `PAYMENT_CREDIT_CARD_CAPTURE_REFUSED` apenas da mensagem visual;
+  o provedor pode não ter emitido esse evento para este checkout. Nenhuma
+  segunda tentativa, limpeza ou alteração de produção foi realizada pelo
+  agente; sem commit/push/merge.
+
+### Preparação para versionamento e canário produtivo — 19/10/2026
+
+- Branch conferida: `feat/asaas-assinatura-pro`; HEAD e branch remota antes
+  desta preparação em `f0d798678635cb05419c334708de580e73eb314b`, confirmado
+  com fetch. As alterações posteriores de UX `/planos`, retorno informativo,
+  ambientes Sandbox/Production, migration reaplicável, documentação, testes
+  e otimizações locais de resumo/RLS estavam presentes. Nenhum arquivo foi
+  descartado; nenhum código adicional de billing/RLS foi implementado nesta etapa.
+- Validações locais repetidas: **134/134 testes PASS**, lint PASS, TypeScript
+  (`npx tsc --noEmit`) PASS, build PASS. O build usou a configuração local já
+  disponível; avisou ausência de OpenAI/e-mail, sem impedir compilação e sem
+  chamadas de IA. Geradores Unicode e paridade com `--check`: PASS, sem
+  reescrever as migrations geradas.
+- PostgreSQL embarcado PGlite local: suites de billing e ambientes PASS para
+  sandbox e production simulados, incluindo upgrade/reaplicação, preservação de
+  dados, RLS e idempotência. Isso não é execução no Supabase produtivo nem E2E
+  financeiro real. Nenhuma migration foi aplicada remotamente nesta etapa.
+- Revisão dos 31 arquivos candidatos, incluindo os ainda não rastreados:
+  nenhum valor de credencial local detectado; sem tokens JWT literais, chaves
+  privadas, secrets Supabase/GitHub ou e-mails pessoais detectados. `.env.local`
+  permanece ignorado; somente `.env.example`, com placeholders, integra o diff.
+  Resultados temporários e credenciais dos prompts não foram incluídos.
+- PNCP, cron, alertas, IA e migrations antigas fora do billing não receberam
+  alterações neste diff. Os únicos SQLs de schema envolvidos são a revisão de
+  `asaas_assinaturas_v1.sql` e os novos roteiros de otimização de resumo/RLS,
+  cuja aplicação produtiva continua sendo uma decisão separada.
+- Checklist e canário planejado em `docs/BILLING_PRODUCAO.md`: conta controlada,
+  exclusivamente Pro, uma cobrança real de R$ 99 e franquia 200, somente após
+  autorizações futuras. **Falta restrição server-side de checkout por conta e
+  plano canário**: a habilitação atual é global e não deve ser ligada numa
+  aplicação pública até existir essa contenção validada. Nenhum teste real,
+  secret ou configuração produtiva foi executado/adicionado nesta preparação.
+- Billing: E2Es positivos Pro/Business previamente aprovados; recusa negativa
+  ainda parcial, demais negativos financeiros ainda pendentes. Dashboard/cold
+  latency: investigação aberta, com 57014 anterior preservado e cauda após
+  inatividade documentada. Versionamento não equivale a aprovação de produção.

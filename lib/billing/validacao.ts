@@ -1,19 +1,26 @@
 import { timingSafeEqual } from "node:crypto";
+import { ASAAS_ENVIRONMENTS, asaasEnvironment, type AsaasEnvironment } from "@/lib/billing/ambiente";
 
-export function precoEmCentavos(valor: string | undefined): number | null {
-  if (!valor || !/^\d+(?:\.\d{1,2})?$/.test(valor)) return null;
-  const centavos = Math.round(Number(valor) * 100);
-  return Number.isSafeInteger(centavos) && centavos > 0 ? centavos : null;
-}
+export { precoEmCentavos } from "@/lib/billing/preco";
 
-export function validarUrlCheckout(link: string): string {
+export function validarUrlCheckout(link: string, environment: AsaasEnvironment): string {
+  const definition = ASAAS_ENVIRONMENTS[asaasEnvironment(environment)];
   const url = new URL(link);
-  if (url.protocol !== "https:" || url.hostname !== "sandbox.asaas.com" ||
+  if (url.protocol !== "https:" || url.hostname !== definition.checkoutHost ||
     url.port || url.username || url.password ||
-    !/^\/(?:000\/)?checkoutSession\//.test(url.pathname)) {
-    throw new Error("URL de Checkout Sandbox invalida.");
+    !definition.checkoutPath.test(url.pathname)) {
+    throw new Error("URL de Checkout invalida para o ambiente.");
   }
   return url.toString();
+}
+
+export function linkDoCheckout(checkout: { id: string; link?: string }, environment: AsaasEnvironment): string {
+  if (typeof checkout.id !== "string" || !/^[a-zA-Z0-9_-]{1,200}$/.test(checkout.id)) {
+    throw new Error("Resposta de checkout incompleta.");
+  }
+  const definition = ASAAS_ENVIRONMENTS[asaasEnvironment(environment)];
+  const link = checkout.link ?? `https://${definition.checkoutHost}/checkoutSession/show?id=${encodeURIComponent(checkout.id)}`;
+  return validarUrlCheckout(link, environment);
 }
 
 export function tokenWebhookValido(recebido: string | null, esperado: string): boolean {

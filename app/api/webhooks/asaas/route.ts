@@ -1,7 +1,7 @@
 import { chamarAsaas, obterConfigAsaas } from "@/lib/billing/asaas";
 import { tokenWebhookValido } from "@/lib/billing/validacao";
 import { verificarCheckoutDaCobranca } from "@/lib/billing/webhook";
-import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
+import { criarClienteBilling } from "@/lib/billing/banco";
 
 const EVENTOS = new Set([
   "CHECKOUT_CREATED", "CHECKOUT_CANCELED", "CHECKOUT_EXPIRED", "CHECKOUT_PAID",
@@ -35,7 +35,9 @@ export async function POST(request: Request) {
     typeof payload.event !== "string" || !EVENTOS.has(payload.event)) {
     return new Response(null, { status: 400 });
   }
-  const admin = criarClienteSupabaseAdmin();
+  let admin: Awaited<ReturnType<typeof criarClienteBilling>>;
+  try { admin = await criarClienteBilling(config.environment); }
+  catch { return new Response(null, { status: 503 }); }
   const { data: jaProcessado, error: erroConsulta } = await admin.rpc(
     "billing_evento_processado_v1", { p_event_id: payload.id },
   );
@@ -74,7 +76,7 @@ export async function POST(request: Request) {
     } catch (error) {
       const message = error instanceof Error ? error.message : "";
       console.error("asaas_webhook_verification_failed", {
-        httpStatus: /^Asaas Sandbox retornou HTTP (\d{3})\.$/.exec(message)?.[1] ?? null,
+        httpStatus: /^Asaas retornou HTTP (\d{3})\.$/.exec(message)?.[1] ?? null,
       });
       return new Response(null, { status: 503 });
     }

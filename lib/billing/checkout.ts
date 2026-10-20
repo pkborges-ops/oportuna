@@ -1,18 +1,12 @@
 import "server-only";
 
 import { chamarAsaas, obterConfigAsaas } from "@/lib/billing/asaas";
-import { validarUrlCheckout, type DadosPagador } from "@/lib/billing/validacao";
+import { linkDoCheckout, validarUrlCheckout, type DadosPagador } from "@/lib/billing/validacao";
 import { obterCliente, type Reservation } from "@/lib/billing/cliente";
 import { paidOffer, type PaidPlanCode } from "@/lib/planos/catalogo";
-import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
+import { criarClienteBilling } from "@/lib/billing/banco";
 
-type Checkout = { id: string; link: string };
-
-async function rpc(name: string, args: Record<string, unknown>): Promise<Reservation> {
-  const { data, error } = await criarClienteSupabaseAdmin().rpc(name, args);
-  if (error) throw new Error(`Falha ao preparar faturamento: ${name}.`);
-  return data as Reservation;
-}
+type Checkout = { id: string; link?: string };
 
 export async function criarOuReutilizarCheckout(
   usuarioId: string, pagador: DadosPagador, planCode: PaidPlanCode,
@@ -20,12 +14,18 @@ export async function criarOuReutilizarCheckout(
   const oferta = paidOffer(planCode);
   if (!oferta) throw new Error("Plano sem preco mensal configurado.");
   const config = obterConfigAsaas();
+  const admin = await criarClienteBilling(config.environment);
+  const rpc = async (name: string, args: Record<string, unknown>): Promise<Reservation> => {
+    const { data, error } = await admin.rpc(name, args);
+    if (error) throw new Error(`Falha ao preparar faturamento: ${name}.`);
+    return data as Reservation;
+  };
   const customerId = await obterCliente(usuarioId, pagador, { rpc, chamarAsaas });
   const reserva = await rpc("billing_reservar_checkout_v1", {
     p_usuario: usuarioId, p_plan_code: oferta.code, p_valor: oferta.priceCents,
     p_franquia_ia: oferta.aiQuota,
   });
-  if (reserva.state === "reuse" && reserva.url) return validarUrlCheckout(reserva.url);
+  if (reserva.state === "reuse" && reserva.url) return validarUrlCheckout(reserva.url, config.environment);
   if (reserva.state !== "claim" || !reserva.id || reserva.customer_id !== customerId) {
     throw new Error(reserva.state === "paid_active"
       ? "Plano pago ativo: alteracoes de plano exigem atendimento."
@@ -51,8 +51,7 @@ export async function criarOuReutilizarCheckout(
         }).format(new Date()) },
       }),
     });
-    if (!checkout.id || !checkout.link) throw new Error("Resposta de checkout incompleta.");
-    const url = validarUrlCheckout(checkout.link);
+    const url = linkDoCheckout(checkout, config.environment);
     await rpc("billing_salvar_checkout_v1", {
       p_id: reserva.id, p_gateway_id: checkout.id, p_url: url,
       p_expira_em: expiraEm.toISOString(),

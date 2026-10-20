@@ -36,7 +36,7 @@ test('preco centralizado aceita centavos exatos e rejeita valores ambiguos', () 
 for (const caminho of ['/checkoutSession/show/abc', '/000/checkoutSession/show/abc']) {
   test(`checkout Sandbox aceita caminho ${caminho}`, () => {
     const url = `https://sandbox.asaas.com${caminho}`;
-    assert.equal(validarUrlCheckout(url), url);
+    assert.equal(validarUrlCheckout(url, 'sandbox'), url);
   });
 }
 
@@ -53,7 +53,7 @@ for (const [caso, url] of [
   ['nome de caminho semelhante', 'https://sandbox.asaas.com/000/checkoutSessionMalicioso/show/abc'],
 ]) {
   test(`checkout Sandbox rejeita ${caso}`, () => {
-    assert.throws(() => validarUrlCheckout(url), /URL de Checkout Sandbox invalida/);
+    assert.throws(() => validarUrlCheckout(url, 'sandbox'), /URL de Checkout invalida/);
   });
 }
 

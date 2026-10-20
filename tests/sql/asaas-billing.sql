@@ -15,7 +15,7 @@ begin
     values(a,cliente,'ready') returning id into c;
   insert into public.billing_subscriptions(usuario_id,billing_customer_id,plan_code,gateway_checkout_id,
     gateway_checkout_url,status_local,valor_centavos,checkout_expira_em)
-    values(a,c,'PRO',ch,'https://sandbox.asaas.com/checkoutSession/show/'||ch,
+    values(a,c,'PRO',ch,(case when public.billing_ambiente_v1()='sandbox' then 'https://sandbox.asaas.com/checkoutSession/show/' else 'https://asaas.com/checkoutSession/show/' end)||ch,
       'checkout_pending',3990,now()+interval '1 hour') returning id into s;
   if (public.billing_reservar_cliente_v1(a)->>'customer_id') is distinct from cliente then
     raise exception 'Cliente nao foi reutilizado'; end if;
@@ -143,7 +143,7 @@ begin
     (select franquia_ia from public.billing_subscriptions where id=s)<>20 then
     raise exception 'Plano contratado nao registrado'; end if;
   perform public.billing_salvar_checkout_v1(s,chk,
-    'https://sandbox.asaas.com/checkoutSession/show/'||chk,now()+interval '1 hour');
+    (case when public.billing_ambiente_v1()='sandbox' then 'https://sandbox.asaas.com/checkoutSession/show/' else 'https://asaas.com/checkoutSession/show/' end)||chk,now()+interval '1 hour');
   ev:=jsonb_build_object('id','evt_'||gen_random_uuid(),'event','PAYMENT_CONFIRMED',
     'payment',jsonb_build_object('id',pagamento,'subscription',assinatura,'customer',cliente,
       'value',39.90,'dueDate',current_date,'billingType','CREDIT_CARD'));

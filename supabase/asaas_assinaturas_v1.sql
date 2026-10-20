@@ -1,19 +1,20 @@
--- MANUAL: aplicar somente em homologacao, apos planos_e_permissoes_v1.sql.
--- Sandbox Asaas; nao executar em producao nesta etapa.
+-- MANUAL: apos planos_e_permissoes_v1.sql. Reaplicavel para atualizar homologacao.
+-- Suporta bancos dedicados sandbox/production; instala sandbox por padrao.
+-- NAO aplicar nem configurar production nesta etapa. Ver README/checklist.
 begin;
 set local lock_timeout = '5s';
 
 -- A migration antiga permanece intacta; ampliar a projecao e seus guardas.
-alter table public.assinaturas_usuario drop constraint assinaturas_usuario_plano_check;
+alter table public.assinaturas_usuario drop constraint if exists assinaturas_usuario_plano_check;
 alter table public.assinaturas_usuario add constraint assinaturas_usuario_plano_check
   check (plano in ('FREE','PRO','BUSINESS'));
 
 alter table public.assinaturas_usuario
-  add column origem text not null default 'SYSTEM'
+  add column if not exists origem text not null default 'SYSTEM'
   check (origem in ('SYSTEM','MANUAL','ASAAS'));
 -- Concessoes Pro anteriores a esta integracao foram manuais e nao podem ser
 -- substituidas por um webhook de outra origem.
-update public.assinaturas_usuario set origem='MANUAL' where plano in ('PRO','BUSINESS');
+update public.assinaturas_usuario set origem='MANUAL' where plano in ('PRO','BUSINESS') and origem='SYSTEM';
 
 create or replace function public.plano_atual_v1() returns text
 language plpgsql stable security invoker set search_path=pg_catalog as $$
@@ -28,18 +29,18 @@ end; $$;
 
 -- Limite comercial Business pendente: NULL = sem teto provisório de perfis.
 -- Vagas de equipe não são liberadas nesta versão.
-create table public.planos_limites_perfis (
+create table if not exists public.planos_limites_perfis (
   plano text primary key check (plano in ('FREE','PRO','BUSINESS')),
   max_profiles integer check (max_profiles is null or max_profiles>0),
   check (plano<>'BUSINESS' or max_profiles is null or max_profiles>3)
 );
 insert into public.planos_limites_perfis(plano,max_profiles)
-  values('FREE',1),('PRO',3),('BUSINESS',null);
+  values('FREE',1),('PRO',3),('BUSINESS',null) on conflict (plano) do nothing;
 alter table public.planos_limites_perfis enable row level security;
 revoke all on public.planos_limites_perfis from public,anon,authenticated;
 grant all on public.planos_limites_perfis to service_role;
 
-create function public.plano_limite_perfis_v1() returns integer
+create or replace function public.plano_limite_perfis_v1() returns integer
 language sql stable security definer set search_path=pg_catalog as $$
   select max_profiles from public.planos_limites_perfis
   where plano=public.plano_atual_v1();
@@ -47,7 +48,7 @@ $$;
 revoke all on function public.plano_limite_perfis_v1() from public,anon;
 grant execute on function public.plano_limite_perfis_v1() to authenticated;
 
-create function public.plano_pago_v1(p_plano text) returns boolean
+create or replace function public.plano_pago_v1(p_plano text) returns boolean
 language sql immutable security invoker set search_path=pg_catalog as $$
   select p_plano in ('PRO','BUSINESS');
 $$;
@@ -158,23 +159,56 @@ begin
   return true;
 end; $$;
 
-create table public.billing_customers (
+-- Um banco dedicado por ambiente. Nenhum usuario comum altera essa escolha.
+create table if not exists public.billing_configuracao (
+  singleton boolean primary key default true check (singleton),
+  ambiente text not null check (ambiente in ('sandbox','production'))
+);
+insert into public.billing_configuracao(singleton,ambiente) values(true,'sandbox')
+  on conflict (singleton) do nothing;
+alter table public.billing_configuracao enable row level security;
+revoke all on public.billing_configuracao from public,anon,authenticated,service_role;
+grant select on public.billing_configuracao to service_role;
+
+create or replace function public.billing_ambiente_v1() returns text
+language plpgsql stable security definer set search_path=pg_catalog as $$
+declare ambiente_atual text;
+begin
+  select ambiente into strict ambiente_atual from public.billing_configuracao where singleton;
+  return ambiente_atual;
+end; $$;
+revoke all on function public.billing_ambiente_v1() from public,anon,authenticated;
+grant execute on function public.billing_ambiente_v1() to service_role;
+
+create or replace function public.billing_verificar_ambiente_v1(p_ambiente text) returns boolean
+language plpgsql stable security definer set search_path=pg_catalog as $$
+begin
+  if p_ambiente is null or p_ambiente not in ('sandbox','production') or
+    p_ambiente<>public.billing_ambiente_v1() then
+    raise exception 'Ambiente de billing incompativel' using errcode='42501';
+  end if;
+  return true;
+end; $$;
+revoke all on function public.billing_verificar_ambiente_v1(text) from public,anon,authenticated;
+grant execute on function public.billing_verificar_ambiente_v1(text) to service_role;
+
+create table if not exists public.billing_customers (
   id uuid primary key default gen_random_uuid(),
   usuario_id uuid not null unique references auth.users(id) on delete cascade,
   gateway text not null default 'ASAAS' check (gateway='ASAAS'),
-  ambiente text not null default 'sandbox' check (ambiente='sandbox'),
+  ambiente text not null default public.billing_ambiente_v1() check (ambiente in ('sandbox','production')),
   gateway_customer_id text unique,
   status_local text not null default 'creating' check (status_local in ('creating','uncertain','ready')),
   lease_ate timestamptz,
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
-create table public.billing_subscriptions (
+create table if not exists public.billing_subscriptions (
   id uuid primary key default gen_random_uuid(),
   usuario_id uuid not null references auth.users(id) on delete cascade,
   billing_customer_id uuid not null references public.billing_customers(id) on delete cascade,
   gateway text not null default 'ASAAS' check (gateway='ASAAS'),
-  ambiente text not null default 'sandbox' check (ambiente='sandbox'),
+  ambiente text not null default public.billing_ambiente_v1() check (ambiente in ('sandbox','production')),
   plan_code text not null check (plan_code in ('PRO','BUSINESS')),
   gateway_checkout_id text unique,
   gateway_checkout_url text,
@@ -191,15 +225,15 @@ create table public.billing_subscriptions (
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now()
 );
-create unique index billing_subscription_aberta_usuario_idx
+create unique index if not exists billing_subscription_aberta_usuario_idx
   on public.billing_subscriptions(usuario_id)
   where status_local not in ('canceled','expired');
-create index billing_subscription_customer_idx on public.billing_subscriptions(billing_customer_id);
+create index if not exists billing_subscription_customer_idx on public.billing_subscriptions(billing_customer_id);
 
 alter table public.assinaturas_usuario
-  add column billing_subscription_id uuid references public.billing_subscriptions(id) on delete set null;
+  add column if not exists billing_subscription_id uuid references public.billing_subscriptions(id) on delete set null;
 
-create table public.billing_payments (
+create table if not exists public.billing_payments (
   id uuid primary key default gen_random_uuid(),
   billing_subscription_id uuid not null references public.billing_subscriptions(id) on delete cascade,
   gateway_payment_id text not null unique,
@@ -212,9 +246,9 @@ create table public.billing_payments (
   estornado_em timestamptz,
   atualizado_em timestamptz not null default now()
 );
-create table public.billing_webhook_events (
+create table if not exists public.billing_webhook_events (
   id uuid primary key default gen_random_uuid(),
-  ambiente text not null default 'sandbox' check (ambiente='sandbox'),
+  ambiente text not null default public.billing_ambiente_v1() check (ambiente in ('sandbox','production')),
   gateway_event_id text not null,
   tipo text not null,
   status_processamento text not null default 'pending'
@@ -225,10 +259,85 @@ create table public.billing_webhook_events (
   unique (ambiente,gateway_event_id)
 );
 
-create function public.billing_evento_processado_v1(p_event_id text) returns boolean
+-- Atualizacao aditiva do schema ja instalado: preserva todos os dados/IDs.
+do $constraints$
+declare tabela text; divergente boolean;
+begin
+  foreach tabela in array array['billing_customers','billing_subscriptions','billing_webhook_events'] loop
+    execute format('alter table public.%I drop constraint if exists %I',tabela,tabela||'_ambiente_check');
+    execute format('alter table public.%I add constraint %I check (ambiente in (''sandbox'',''production''))',tabela,tabela||'_ambiente_check');
+    execute format('alter table public.%I alter column ambiente set default public.billing_ambiente_v1()',tabela);
+    execute format('select exists(select 1 from public.%I where ambiente<>public.billing_ambiente_v1())',tabela) into strict divergente;
+    if divergente then raise exception 'Dados de billing pertencem a outro ambiente'; end if;
+  end loop;
+end $constraints$;
+
+-- Escolha so pode mudar pelo administrador e antes do primeiro registro.
+create or replace function public.billing_proteger_configuracao_v1() returns trigger
+language plpgsql security definer set search_path=pg_catalog as $$
+begin
+  if tg_op='DELETE' then raise exception 'Configuracao de billing nao pode ser removida'; end if;
+  perform pg_catalog.pg_advisory_xact_lock(7105);
+  if new.ambiente<>old.ambiente and (
+    exists(select 1 from public.billing_customers) or
+    exists(select 1 from public.billing_subscriptions) or
+    exists(select 1 from public.billing_payments) or
+    exists(select 1 from public.billing_webhook_events)) then
+    raise exception 'Ambiente imutavel apos inicio do billing' using errcode='42501';
+  end if;
+  return new;
+end; $$;
+revoke all on function public.billing_proteger_configuracao_v1() from public,anon,authenticated;
+drop trigger if exists billing_proteger_configuracao on public.billing_configuracao;
+create trigger billing_proteger_configuracao before update or delete on public.billing_configuracao
+  for each row execute function public.billing_proteger_configuracao_v1();
+
+-- Mesmo service_role nao pode inserir IDs de outro ambiente nesse banco.
+create or replace function public.billing_proteger_ambiente_v1() returns trigger
+language plpgsql security definer set search_path=pg_catalog as $$
+begin
+  perform pg_catalog.pg_advisory_xact_lock_shared(7105);
+  if tg_table_name='billing_payments' then
+    if not exists(select 1 from public.billing_subscriptions where id=new.billing_subscription_id
+      and ambiente=public.billing_ambiente_v1()) then
+      raise exception 'Pagamento de outro ambiente' using errcode='42501';
+    end if;
+  else
+    if new.ambiente<>public.billing_ambiente_v1() then
+      raise exception 'Registro de outro ambiente' using errcode='42501';
+    end if;
+    if tg_op='UPDATE' and new.ambiente<>old.ambiente then
+      raise exception 'Ambiente de registro imutavel' using errcode='42501';
+    end if;
+    if tg_table_name='billing_subscriptions' then
+      if new.gateway_checkout_url is not null and
+        not (case when new.ambiente='sandbox' then
+          new.gateway_checkout_url ~ '^https://sandbox\.asaas\.com/(000/)?checkoutSession/'
+          else new.gateway_checkout_url ~ '^https://asaas\.com/checkoutSession/' end) then
+        raise exception 'URL de checkout de outro ambiente' using errcode='42501';
+      end if;
+      if not exists(select 1 from public.billing_customers
+        where id=new.billing_customer_id and ambiente=new.ambiente) then
+        raise exception 'Cliente de outro ambiente' using errcode='42501';
+      end if;
+    end if;
+  end if;
+  return new;
+end; $$;
+revoke all on function public.billing_proteger_ambiente_v1() from public,anon,authenticated;
+do $triggers$
+declare tabela text;
+begin
+  foreach tabela in array array['billing_customers','billing_subscriptions','billing_payments','billing_webhook_events'] loop
+    execute format('drop trigger if exists billing_proteger_ambiente on public.%I',tabela);
+    execute format('create trigger billing_proteger_ambiente before insert or update on public.%I for each row execute function public.billing_proteger_ambiente_v1()',tabela);
+  end loop;
+end $triggers$;
+
+create or replace function public.billing_evento_processado_v1(p_event_id text) returns boolean
 language sql stable security definer set search_path=pg_catalog as $$
   select exists(select 1 from public.billing_webhook_events
-    where ambiente='sandbox' and gateway_event_id=p_event_id
+    where ambiente=public.billing_ambiente_v1() and gateway_event_id=p_event_id
       and status_processamento='processed');
 $$;
 
@@ -242,14 +351,14 @@ grant all on public.billing_customers,public.billing_subscriptions,
   public.billing_payments,public.billing_webhook_events to service_role;
 
 -- Expor apenas o estado necessario a pagina /planos, sem IDs do gateway.
-create function public.billing_estado_atual_v1() returns jsonb
+create or replace function public.billing_estado_atual_v1() returns jsonb
 language sql stable security definer set search_path=pg_catalog as $$
   select case when auth.uid() is null then null else coalesce((
     select jsonb_build_object('status',s.status_local,'plan_code',s.plan_code,'paid_until',s.paid_until,
       'checkout_expira_em',s.checkout_expira_em,
       'tem_checkout',s.gateway_checkout_id is not null,
-      'tem_assinatura',s.gateway_subscription_id is not null)
-    from public.billing_subscriptions s where s.usuario_id=auth.uid()
+      'tem_assinatura',s.gateway_subscription_id is not null,'franquia_ia',s.franquia_ia)
+    from public.billing_subscriptions s where s.usuario_id=auth.uid() and s.ambiente=public.billing_ambiente_v1()
     order by s.criado_em desc limit 1
   ),'{}'::jsonb) end;
 $$;
@@ -258,7 +367,7 @@ grant execute on function public.billing_estado_atual_v1() to authenticated;
 
 -- A reserva no banco antecede toda chamada externa; cliques simultaneos
 -- recebem busy e nao executam uma segunda criacao no Asaas.
-create function public.billing_reservar_cliente_v1(p_usuario uuid) returns jsonb
+create or replace function public.billing_reservar_cliente_v1(p_usuario uuid) returns jsonb
 language plpgsql security definer set search_path=pg_catalog as $$
 declare c public.billing_customers%rowtype;
 begin
@@ -277,7 +386,7 @@ begin
     where id=c.id;
   return jsonb_build_object('state','reconcile','id',c.id);
 end; $$;
-create function public.billing_salvar_cliente_v1(p_id uuid,p_gateway_id text) returns void
+create or replace function public.billing_salvar_cliente_v1(p_id uuid,p_gateway_id text) returns void
 language plpgsql security definer set search_path=pg_catalog as $$
 begin
   if nullif(p_gateway_id,'') is null then raise exception 'ID de cliente ausente'; end if;
@@ -286,13 +395,13 @@ begin
     where id=p_id and (gateway_customer_id is null or gateway_customer_id=p_gateway_id);
   if not found then raise exception 'Reserva de cliente inconsistente'; end if;
 end; $$;
-create function public.billing_cliente_incerteza_v1(p_id uuid) returns void
+create or replace function public.billing_cliente_incerteza_v1(p_id uuid) returns void
 language sql security definer set search_path=pg_catalog as $$
   update public.billing_customers set status_local='uncertain',lease_ate=null,
     atualizado_em=now() where id=p_id and status_local='creating';
 $$;
 
-create function public.billing_reservar_checkout_v1(
+create or replace function public.billing_reservar_checkout_v1(
   p_usuario uuid,p_plan_code text,p_valor integer,p_franquia_ia integer) returns jsonb
 language plpgsql security definer set search_path=pg_catalog as $$
 declare s public.billing_subscriptions%rowtype; c public.billing_customers%rowtype;
@@ -338,7 +447,7 @@ begin
     values(p_usuario,c.id,p_plan_code,'creating',p_valor,p_franquia_ia) returning * into s;
   return jsonb_build_object('state','claim','id',s.id,'customer_id',c.gateway_customer_id);
 end; $$;
-create function public.billing_salvar_checkout_v1(
+create or replace function public.billing_salvar_checkout_v1(
   p_id uuid,p_gateway_id text,p_url text,p_expira_em timestamptz) returns void
 language plpgsql security definer set search_path=pg_catalog as $$
 begin
@@ -350,7 +459,7 @@ begin
     where id=p_id and status_local='creating';
   if not found then raise exception 'Reserva de checkout inconsistente'; end if;
 end; $$;
-create function public.billing_checkout_incerteza_v1(p_id uuid) returns void
+create or replace function public.billing_checkout_incerteza_v1(p_id uuid) returns void
 language sql security definer set search_path=pg_catalog as $$
   update public.billing_subscriptions set status_local='uncertain',atualizado_em=now()
   where id=p_id and status_local='creating';
@@ -358,7 +467,7 @@ $$;
 
 -- O servidor usa o ID do checkout armazenado para confirmar no Asaas qual
 -- cobranca foi gerada por aquela sessao, antes de vincular a assinatura.
-create function public.billing_checkout_pendente_v1(p_gateway_customer_id text) returns jsonb
+create or replace function public.billing_checkout_pendente_v1(p_gateway_customer_id text) returns jsonb
 language sql stable security definer set search_path=pg_catalog as $$
   select jsonb_build_object('checkout_id',s.gateway_checkout_id)
   from public.billing_subscriptions s
@@ -372,7 +481,7 @@ $$;
 
 -- Uma unica transacao aplica evento, pagamento e projecao de entitlement.
 -- Eventos desconhecidos nao sao ligados por email nem por referencia arbitraria.
-create function public.billing_processar_webhook_v1(
+create or replace function public.billing_processar_webhook_v1(
   p jsonb,p_checkout_verificado text default null) returns text
 language plpgsql security definer set search_path=pg_catalog as $$
 declare eid text:=p->>'id'; ev text:=p->>'event';
@@ -384,10 +493,10 @@ begin
     raise exception 'Evento invalido'; end if;
   insert into public.billing_webhook_events(gateway_event_id,tipo)
     values(eid,ev) on conflict (ambiente,gateway_event_id) do nothing;
-  perform 1 from public.billing_webhook_events where ambiente='sandbox'
+  perform 1 from public.billing_webhook_events where ambiente=public.billing_ambiente_v1()
     and gateway_event_id=eid for update;
   if (select status_processamento='processed' from public.billing_webhook_events
-      where ambiente='sandbox' and gateway_event_id=eid) then return 'duplicate'; end if;
+      where ambiente=public.billing_ambiente_v1() and gateway_event_id=eid) then return 'duplicate'; end if;
   begin
     if ev in ('CHECKOUT_CREATED','CHECKOUT_CANCELED','CHECKOUT_EXPIRED','CHECKOUT_PAID') then
       cid:=p->'checkout'->>'id';
@@ -399,7 +508,9 @@ begin
         if referencia ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
           and cid ~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' then
           update public.billing_subscriptions s0 set gateway_checkout_id=cid,
-            gateway_checkout_url='https://sandbox.asaas.com/checkoutSession/show/'||cid,
+            gateway_checkout_url=case when public.billing_ambiente_v1()='sandbox' then
+              'https://sandbox.asaas.com/checkoutSession/show/'||cid else
+              'https://asaas.com/checkoutSession/show?id='||cid end,
             checkout_expira_em=now()+interval '60 minutes',status_local='checkout_pending',
             atualizado_em=now()
           from public.billing_customers c
@@ -457,7 +568,7 @@ begin
         if ev='PAYMENT_CONFIRMED' then raise exception 'Checkout nao verificado'; end if;
         -- Outros eventos anteriores ao primeiro pagamento nao concedem acesso.
         update public.billing_webhook_events set status_processamento='processed',
-          processado_em=now(),erro=null where ambiente='sandbox' and gateway_event_id=eid;
+          processado_em=now(),erro=null where ambiente=public.billing_ambiente_v1() and gateway_event_id=eid;
         return 'processed';
       end if;
       if valor<>s.valor_centavos then raise exception 'Valor nao corresponde'; end if;
@@ -535,14 +646,49 @@ begin
       raise exception 'Tipo de evento nao suportado';
     end if;
     update public.billing_webhook_events set status_processamento='processed',
-      processado_em=now(),erro=null where ambiente='sandbox' and gateway_event_id=eid;
+      processado_em=now(),erro=null where ambiente=public.billing_ambiente_v1() and gateway_event_id=eid;
     return 'processed';
   exception when others then
     update public.billing_webhook_events set status_processamento='error',
-      erro='SQLSTATE '||sqlstate where ambiente='sandbox' and gateway_event_id=eid;
+      erro='SQLSTATE '||sqlstate where ambiente=public.billing_ambiente_v1() and gateway_event_id=eid;
     return 'retry';
   end;
 end; $$;
+
+-- Validacao e operacao na MESMA transacao: nao ha janela para troca de ambiente.
+create or replace function public.billing_executar_v1(
+  p_ambiente text,p_operacao text,p_argumentos jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path=pg_catalog as $$
+begin
+  perform pg_catalog.pg_advisory_xact_lock_shared(7105);
+  perform public.billing_verificar_ambiente_v1(p_ambiente);
+  case p_operacao
+    when 'billing_reservar_cliente_v1' then
+      return public.billing_reservar_cliente_v1((p_argumentos->>'p_usuario')::uuid);
+    when 'billing_salvar_cliente_v1' then
+      perform public.billing_salvar_cliente_v1((p_argumentos->>'p_id')::uuid,p_argumentos->>'p_gateway_id');
+    when 'billing_cliente_incerteza_v1' then
+      perform public.billing_cliente_incerteza_v1((p_argumentos->>'p_id')::uuid);
+    when 'billing_reservar_checkout_v1' then
+      return public.billing_reservar_checkout_v1((p_argumentos->>'p_usuario')::uuid,
+        p_argumentos->>'p_plan_code',(p_argumentos->>'p_valor')::integer,(p_argumentos->>'p_franquia_ia')::integer);
+    when 'billing_salvar_checkout_v1' then
+      perform public.billing_salvar_checkout_v1((p_argumentos->>'p_id')::uuid,p_argumentos->>'p_gateway_id',
+        p_argumentos->>'p_url',(p_argumentos->>'p_expira_em')::timestamptz);
+    when 'billing_checkout_incerteza_v1' then
+      perform public.billing_checkout_incerteza_v1((p_argumentos->>'p_id')::uuid);
+    when 'billing_evento_processado_v1' then
+      return to_jsonb(public.billing_evento_processado_v1(p_argumentos->>'p_event_id'));
+    when 'billing_checkout_pendente_v1' then
+      return public.billing_checkout_pendente_v1(p_argumentos->>'p_gateway_customer_id');
+    when 'billing_processar_webhook_v1' then
+      return to_jsonb(public.billing_processar_webhook_v1(p_argumentos->'p',p_argumentos->>'p_checkout_verificado'));
+    else raise exception 'Operacao de billing invalida' using errcode='42501';
+  end case;
+  return 'null'::jsonb;
+end; $$;
+revoke all on function public.billing_executar_v1(text,text,jsonb) from public,anon,authenticated;
+grant execute on function public.billing_executar_v1(text,text,jsonb) to service_role;
 
 revoke all on function public.billing_reservar_cliente_v1(uuid),
   public.billing_evento_processado_v1(text),

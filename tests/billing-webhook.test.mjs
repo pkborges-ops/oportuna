@@ -56,11 +56,11 @@ test('erro de consulta nao vira confirmacao e checkout vazio nao e aceito', asyn
   }), false);
 });
 
-function handler(cobranca, resultado = 'processed') {
+function handler(cobranca, resultado = 'processed', bancoCompativel = true) {
   const chamadas = [];
   const dependencies = {
     '@/lib/billing/asaas': {
-      obterConfigAsaas: () => ({ webhookToken: 'token-ficticio-de-teste' }),
+      obterConfigAsaas: () => ({ environment: 'sandbox', webhookToken: 'token-ficticio-de-teste' }),
       chamarAsaas: async path => {
         chamadas.push({ path });
         return path.startsWith('/payments?') ? { data: [], hasMore: false } : cobranca;
@@ -68,11 +68,14 @@ function handler(cobranca, resultado = 'processed') {
     },
     '@/lib/billing/validacao': { tokenWebhookValido },
     '@/lib/billing/webhook': { verificarCheckoutDaCobranca },
-    '@/lib/supabase/admin': { criarClienteSupabaseAdmin: () => ({ rpc: async (nome, args) => {
+    '@/lib/billing/banco': { criarClienteBilling: async () => {
+      if (!bancoCompativel) throw new Error('Ambiente incompativel');
+      return { rpc: async (nome, args) => {
       chamadas.push({ rpc: nome, args });
       return { error: null, data: nome === 'billing_evento_processado_v1' ? false
         : nome === 'billing_checkout_pendente_v1' ? { checkout_id: 'checkout_teste' } : resultado };
-    } }) },
+    } };
+    } },
   };
   const source = readFileSync(new URL('../app/api/webhooks/asaas/route.ts', import.meta.url), 'utf8');
   const { outputText } = ts.transpileModule(source, {
@@ -114,4 +117,10 @@ test('handler mantem 503 se a RPC falhar na ativacao; nao confirma entrega como 
   const { post, chamadas } = handler(confirmado, 'retry');
   assert.equal((await post(evento())).status, 503);
   assert.equal(chamadas.filter(c => c.rpc === 'billing_processar_webhook_v1').length, 1);
+});
+
+test('handler bloqueia banco de outro ambiente antes de qualquer consulta financeira ou evento', async () => {
+  const { post, chamadas } = handler(confirmado, 'processed', false);
+  assert.equal((await post(evento())).status, 503);
+  assert.equal(chamadas.length, 0);
 });

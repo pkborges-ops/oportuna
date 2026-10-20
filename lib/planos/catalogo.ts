@@ -1,4 +1,4 @@
-import { precoEmCentavos } from "@/lib/billing/validacao";
+import { precoEmCentavos } from "@/lib/billing/preco";
 
 export type PaidPlanCode = "PRO" | "BUSINESS";
 export type PlanCode = "FREE" | PaidPlanCode;

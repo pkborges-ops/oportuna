@@ -16,7 +16,7 @@ export function AssinaturaDialog({ planCode, planName, priceLabel,
   const campo = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-slate-950 focus:border-cyan-700 focus:outline-none focus:ring-2 focus:ring-cyan-100";
   return <>
     <button type="button" onClick={() => dialog.current?.showModal()}
-      className="mt-4 w-full rounded-lg bg-cyan-700 px-4 py-2.5 font-semibold text-white hover:bg-cyan-800">
+      className="w-full rounded-lg bg-cyan-700 px-4 py-3 font-semibold text-white hover:bg-cyan-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-700">
       {reutilizar ? "Continuar pagamento" : `Assinar ${planName}`}
     </button>
     <dialog ref={dialog} aria-labelledby={`${prefixo}-titulo`} aria-describedby={`${prefixo}-seguro`}

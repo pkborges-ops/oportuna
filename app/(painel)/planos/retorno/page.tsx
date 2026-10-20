@@ -2,7 +2,8 @@ import Link from "next/link";
 
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 import { obterPlanoAtual } from "@/services/planos-service";
-import { PLAN_CATALOG, paidPlanCode } from "@/lib/planos/catalogo";
+import { PLAN_CATALOG } from "@/lib/planos/catalogo";
+import { mensagemDoRetorno, type BillingEstado } from "@/lib/planos/apresentacao";
 
 export default async function RetornoCheckout({ searchParams }: {
   searchParams: Promise<{ estado?: string }>;
@@ -11,18 +12,13 @@ export default async function RetornoCheckout({ searchParams }: {
   const plano = await obterPlanoAtual();
   const supabase = await criarClienteSupabaseServer();
   const { data } = await supabase.rpc("billing_estado_atual_v1");
-  const billing = data as { status?: string; plan_code?: string } | null;
-  const planCode = paidPlanCode(billing?.plan_code);
-  const planName = planCode ? PLAN_CATALOG[planCode].name : "o plano escolhido";
-  const mensagem = estado === "cancelado" ? "O checkout foi cancelado." :
-    estado === "expirado" ? "O checkout expirou." :
-    `Pagamento recebido pelo checkout. Estamos confirmando sua assinatura ${planName}.`;
+  const billing = data as BillingEstado | null;
+  const mensagem = mensagemDoRetorno(plano.codigo, billing, estado);
   return <section className="grid gap-4">
     <h1 className="text-2xl font-semibold">Assinatura</h1>
     <p>{mensagem}</p>
-    <p>Plano efetivo agora: <strong>{plano.codigo}</strong>.
-      {billing?.status ? ` Estado do pagamento: ${billing.status}.` : ""}</p>
-    <p>Esta página não libera acesso. A confirmação é processada pelo webhook financeiro.</p>
+    <p>Seu plano atual: <strong>{PLAN_CATALOG[plano.codigo].name}</strong>.</p>
+    <p>O acesso depende da confirmação do pagamento. Retornar do checkout não altera seu plano.</p>
     <Link href="/planos" className="text-cyan-700 underline">Voltar aos planos</Link>
   </section>;
 }
