@@ -351,7 +351,7 @@ Resultados observados no navegador, com sessão real e sem acesso administrativo
 - Favoritar persistiu e apareceu em Favoritos; desfavoritar voltou à lista vazia.
   O perfil de teste foi mantido para reprodução.
 - Informar na URL o perfil sintético de outro usuário
-  `a63a0c83-514d-4c70-8c93-68238d4b8102` não selecionou esse perfil, não exibiu scores
+  `identificador de fixture omitido` não selecionou esse perfil, não exibiu scores
   e voltou à ordenação sem perfil. Isto comprova o filtro da aplicação; não equivale
   a testar diretamente a RPC com JWT de dois usuários distintos.
 
@@ -385,7 +385,7 @@ executou SQL nem migration. Reteste autenticado no navegador passou:
 
 - Busca `software`, status aberta, UF SC, aderência alta, perfil de teste e
   ordenação Recomendadas; navegação até a página 2.
-- Ver detalhes de `Aquisição 18625` (ID `245fb923-fa8b-4005-a841-7c6db5148531`)
+- Ver detalhes de `Aquisição 18625` (ID `identificador de fixture omitido`)
   carregou normalmente, sem o erro de servidor anterior.
 - Exibiu score 100%, nível Alta, 3/3 palavras, 2/2 termos de segmento, palavras
   encontradas `software, gestão pública, suporte`, termos `tecnologia, software`
@@ -1652,3 +1652,66 @@ E2E Pro/Business e cenários financeiros negativos permanecem pendentes.
   ainda parcial, demais negativos financeiros ainda pendentes. Dashboard/cold
   latency: investigação aberta, com 57014 anterior preservado e cauda após
   inatividade documentada. Versionamento não equivale a aprovação de produção.
+
+### Trava de canário Pro — validação local, 20/10/2026
+
+- Sobre a branch `feat/asaas-assinatura-pro`, commit-base `97102b8`, foi adicionada
+  a verificação server-only `checkoutPermitido`. Em produção, exige exatamente
+  `BILLING_CANARY_ENABLED=true`, um UUID válido em `BILLING_CANARY_USER_ID`, a
+  identidade autenticada correspondente e plano Pro. Flag ausente/desligada,
+  UUID inválido, Business ou outra conta bloqueiam novos checkouts produtivos.
+  Desligar o canário não abre contratação ao público; Sandbox mantém Pro/Business.
+- Endpoint POST e serviço de criação/reuso verificam a regra antes de alterar
+  cliente, reservar ou chamar o Asaas. POST bloqueado retorna HTTP 403 com
+  "Assinaturas em liberação gradual."; query, formulário e metadata não
+  substituem identidade, ambiente ou configuração do servidor.
+- `/planos` calcula elegibilidade no servidor e passa somente booleanos à
+  apresentação. Contas Free não elegíveis veem "Disponível em breve" e
+  "Assinaturas em liberação gradual.", sem formulário de assinatura. Canário
+  oferece somente modal Pro. Plano vigente, entitlements e webhook não foram
+  condicionados à trava. O ID configurado não é passado às props de apresentação.
+- Testes executam o handler POST e o serviço reais com Request/Response e
+  dependências de banco/Asaas substituídas, sem chamadas remotas: matriz das duas
+  contas/planos, ausência de configuração, tentativa de override, autenticação,
+  bloqueio antes de efeitos externos, preços/franquias, reuso e processamento do
+  webhook independente do canário. Testes de renderização cobrem os novos estados.
+- **149/149 testes PASS**, `npm run lint` PASS, `npx tsc --noEmit` PASS,
+  `git diff --check` PASS e `npm run build` PASS. Assets client compilados sem
+  referências a `BILLING_CANARY_USER_ID`/`BILLING_CANARY_ENABLED`; módulo marcado
+  `server-only`. Revisão React: autorização nos pontos de mutação, verificações
+  baratas antes do banco e somente booleanos na apresentação.
+- `.env.example` contém somente flag desabilitada e UUID vazio. `.env.local`
+  não foi alterado; nenhum UUID real ou credencial foi configurado. Não houve
+  migration, alteração em SQL/RLS, produção, cobrança, commit, push ou merge.
+  E2Es financeiros negativos e investigação de latência fria continuam pendentes.
+- Arquivos desta etapa (13):
+  - Servidor: `lib/billing/canario.ts`, `lib/billing/checkout.ts`,
+    `app/api/billing/checkout/route.ts`.
+  - Apresentação: `app/(painel)/planos/page.tsx`,
+    `components/planos/planos-view.tsx`, `lib/planos/apresentacao.ts`.
+  - Testes: `tests/billing-canario.test.mjs`, `tests/billing-webhook.test.mjs`,
+    `tests/planos-ux.test.mjs`.
+  - Configuração/documentação: `.env.example`, `README.md`,
+    `docs/BILLING_PRODUCAO.md`, `tests/sql/HOMOLOGACAO.md`.
+
+### Revisão pré-commit da liberação gradual — 20/10/2026
+
+- Branch `feat/asaas-assinatura-pro`, base `97102b8`, PR #9 aberto. Validações
+  repetidas antes do versionamento: 149/149 testes PASS, lint PASS, TypeScript
+  PASS, diff check PASS e build PASS. Nenhuma regra adicional de billing,
+  webhook, preço ou ativação foi modificada nesta revisão.
+- Os 13 arquivos revisados não contêm secrets locais ou UUID real configurado
+  para o canário. Os dois IDs nos novos testes são fixtures sintéticas. Duas
+  referências antigas a UUIDs de fixtures neste relatório foram anonimizadas,
+  preservando a descrição e os resultados dos cenários. `.env.local` continua
+  ignorado e inalterado; `.env.example` mantém flag false e UUID vazio.
+- Nenhuma configuração Production, migration ou cobrança real foi executada.
+  Pendências antes do teste controlado: aprovar/configurar a conta produtiva e
+  o ambiente dedicado, aplicar/validar a migration mediante autorização futura,
+  configurar credenciais e webhook de produção, validar o bloqueio das demais
+  contas e de Business no ambiente publicado, e autorizar a cobrança Pro de
+  R$ 99 com recorrência e encerramento definidos. Checklist completo em
+  `docs/BILLING_PRODUCAO.md`.
+- Recusa financeira ainda parcial, demais negativos financeiros sem E2E completo
+  e investigação de latência fria continuam registrados; aprovação do commit
+  não representa autorização para merge ou habilitação produtiva.

@@ -34,6 +34,8 @@ configurar secrets, criar cobrança real ou fazer merge nesta etapa.
 | `ASAAS_ENVIRONMENT` | `production`, sem inferência ou fallback |
 | `ASAAS_PRODUCTION_ENABLED` | Manter `false` até autorização da liberação; `true` é condição adicional |
 | `ASAAS_PRODUCTION_SUPABASE_URL` | URL HTTPS exata do projeto produtivo aprovado; diferente da homologação |
+| `BILLING_CANARY_ENABLED` | Somente `true` permite o canário; `false`, ausente ou inválido bloqueia todos os novos checkouts produtivos |
+| `BILLING_CANARY_USER_ID` | UUID único de `auth.users` da conta controlada; somente servidor, sem prefixo `NEXT_PUBLIC_`, sem lista ou fallback |
 | `NEXT_PUBLIC_SUPABASE_URL` | Igual à URL produtiva fixada acima |
 | `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | Chave pública do mesmo projeto |
 | `SUPABASE_SECRET_KEY` | Secret do mesmo projeto, somente no servidor |
@@ -95,15 +97,21 @@ Estado desta revisão: projeto Supabase produtivo, domínio oficial, credenciais
 configuração remota e migration produtiva **não foram verificados nem alterados**.
 Os exemplos acima não confirmam que tais configurações já existam em produção.
 
-**Bloqueio anterior à habilitação:** o código atual tem uma trava global
-`ASAAS_PRODUCTION_ENABLED`, sem allowlist de usuário para o checkout. Habilitar
-essa variável numa aplicação pública liberaria a mesma rota para outras contas
-Free elegíveis. Ocultar botão ou compartilhar link somente com o testador não
-restringe a API. Antes do canário, aprovar e validar uma restrição server-side
-à conta controlada, com teste de tentativa direta por outra conta; o Business
-também deve ficar indisponível para novas contratações nesse canário. Essa
-restrição ainda não foi implementada nesta preparação e deve preservar o webhook
-dos pagamentos existentes. Não habilitar produção enquanto esse bloqueio existir.
+**Contenção server-side implementada localmente, ainda não publicada/configurada
+em produção:** além da trava global `ASAAS_PRODUCTION_ENABLED`, novos checkouts
+produtivos exigem `BILLING_CANARY_ENABLED=true`, UUID válido em
+`BILLING_CANARY_USER_ID`, identidade autenticada exatamente correspondente e
+plano Pro. A rota POST e o serviço de criação/reuso verificam a trava antes
+de qualquer alteração de cliente, reserva ou chamada externa. Business e outras
+contas recebem bloqueio controlado HTTP 403, com mensagem de liberação gradual.
+Flags ausentes/desligadas ou UUID inválido bloqueiam todos os novos checkouts;
+desligar o canário não significa abrir ao público. Sandbox permanece inalterado.
+
+A página de planos calcula a elegibilidade no servidor e passa apenas booleanos
+à apresentação, sem expor o ID configurado. Query/body e metadata não liberam
+acesso; ocultar botão não é a proteção da API. Webhook, regras financeiras,
+entitlements e concessões existentes não dependem da trava de canário. A
+homologação produtiva e o canário real continuam aguardando autorização.
 
 1. Autorizar separadamente migration/configuração/deployment e a operação
    financeira. Identificar uma única conta Free de produção autorizada, sem
@@ -156,8 +164,9 @@ contornar falha. Preservar histórico e manter recepção/reconciliação dos ev
 - Dashboard: RPC rápida em chamadas aquecidas, mas primeiras chamadas após pausa
   chegaram a 6,3–6,6 s no teste discriminatório; há HTTP 500/SQLSTATE 57014 anterior.
   A causa interna da latência fria permanece aberta, sem novo SQL ou timeout.
-- Restrição server-side da conta/plano canário e procedimento de bloqueio de
-  novas contratações preservando o webhook precisam ser aprovados e validados.
+- Restrição server-side canário implementada/testada localmente; ainda faltam
+  revisão e publicação autorizada, configuração da conta real e validação no
+  ambiente produtivo antes de qualquer cobrança.
 - Limite comercial de perfis Business continua pendente; não impede planejar
   o canário exclusivamente Pro, mas impede anunciar um número não definido.
 
@@ -175,6 +184,11 @@ Merge também depende de autorização separada; este checklist não a concede.
   payload financeiro completo. Segredos não são commitados nem enviados no chat.
 - [ ] Bloquear novas contratações em caso de falha, mantendo receptor de eventos
   e conciliação compatíveis. Não trocar banco/ambiente para contornar erros.
+- [ ] Para suspender novos checkouts produtivos, desligar
+  `BILLING_CANARY_ENABLED`, mantendo a configuração global e o webhook ativos.
+  A mudança de variável precisa chegar ao deployment; validar o bloqueio por
+  POST direto após publicá-la. Isso bloqueia criação/reuso pelo Oportuna, mas
+  não invalida links já emitidos nem cancela cobranças/recorrências no Asaas.
 - [ ] A trava `ASAAS_PRODUCTION_ENABLED` é global, incluindo webhook: não a
   usar como único rollback depois de existirem cobranças. Bloquear novas
   contratações com uma versão compatível ou regra específica para checkout,

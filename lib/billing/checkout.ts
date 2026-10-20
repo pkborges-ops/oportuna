@@ -5,12 +5,14 @@ import { linkDoCheckout, validarUrlCheckout, type DadosPagador } from "@/lib/bil
 import { obterCliente, type Reservation } from "@/lib/billing/cliente";
 import { paidOffer, type PaidPlanCode } from "@/lib/planos/catalogo";
 import { criarClienteBilling } from "@/lib/billing/banco";
+import { checkoutPermitido } from "@/lib/billing/canario";
 
 type Checkout = { id: string; link?: string };
 
 export async function criarOuReutilizarCheckout(
   usuarioId: string, pagador: DadosPagador, planCode: PaidPlanCode,
 ): Promise<string> {
+  if (!checkoutPermitido(usuarioId, planCode)) throw new Error("Assinaturas em liberação gradual.");
   const oferta = paidOffer(planCode);
   if (!oferta) throw new Error("Plano sem preco mensal configurado.");
   const config = obterConfigAsaas();

@@ -12,11 +12,13 @@ export function dataDoPlano(value?: string): string | null {
 }
 
 export function estadoDoPlano(code: PlanCode, current: PlanCode, billing: BillingEstado | null,
-  ready: boolean, offer: boolean, now = Date.now()): EstadoPlano {
+  ready: boolean, offer: boolean, now = Date.now(), checkoutAllowed = true): EstadoPlano {
   if (code === current) return { label: "Plano atual" };
   if (code === "FREE") return { label: "Gratuito para novas contas" };
   if (current !== "FREE") return { label: "Alteração pelo suporte",
     message: "Para mudar de plano, entre em contato com o suporte." };
+  if (!checkoutAllowed) return { label: "Disponível em breve",
+    message: "Assinaturas em liberação gradual." };
   if (!ready || !offer) return { label: "Indisponível no momento",
     message: "A contratação deste plano está temporariamente indisponível." };
   const status = billing?.status;

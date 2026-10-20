@@ -4,6 +4,7 @@ import { paidOffer } from "@/lib/planos/catalogo";
 import { type BillingEstado } from "@/lib/planos/apresentacao";
 import { obterConfigAsaas } from "@/lib/billing/asaas";
 import { criarClienteBilling } from "@/lib/billing/banco";
+import { checkoutPermitido } from "@/lib/billing/canario";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 import { obterPlanoAtual } from "@/services/planos-service";
 
@@ -16,8 +17,11 @@ export default async function PlanosPage({ searchParams }: {
     supabase.auth.getUser(), supabase.rpc("billing_estado_atual_v1"), searchParams,
   ]);
   const nomeConta = user?.user_metadata?.nome ?? user?.user_metadata?.full_name ?? user?.user_metadata?.name;
+  const checkoutAllowed = {
+    PRO: checkoutPermitido(user?.id, "PRO"), BUSINESS: checkoutPermitido(user?.id, "BUSINESS"),
+  };
   let ready = false;
-  if (!estadoErro) {
+  if (!estadoErro && (checkoutAllowed.PRO || checkoutAllowed.BUSINESS)) {
     try {
       const config = obterConfigAsaas();
       await criarClienteBilling(config.environment);
@@ -26,7 +30,7 @@ export default async function PlanosPage({ searchParams }: {
   }
   return <>
     <PlanViewEvent />
-    <PlanosView current={plano.codigo} billing={estado as BillingEstado | null} ready={ready}
+    <PlanosView current={plano.codigo} billing={estado as BillingEstado | null} ready={ready} checkoutAllowed={checkoutAllowed}
       offers={{ PRO: paidOffer("PRO"), BUSINESS: paidOffer("BUSINESS") }}
       nomeInicial={typeof nomeConta === "string" ? nomeConta.slice(0, 120) : ""}
       emailInicial={user?.email ?? ""} error={params.erro ? "Não foi possível continuar. Confira os dados do pagador ou acompanhe a situação da assinatura." : undefined} />

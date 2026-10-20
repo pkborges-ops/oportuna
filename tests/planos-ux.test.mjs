@@ -8,6 +8,7 @@ import { estadoDoPlano, mensagemDoRetorno, dataDoPlano } from '../lib/planos/apr
 
 const config = { PRO_MONTHLY_PRICE: '99', BUSINESS_MONTHLY_PRICE: '197', PRO_MONTHLY_AI_LIMIT: '200', BUSINESS_MONTHLY_AI_LIMIT: '1000' };
 const props = { current: 'FREE', billing: null, ready: true, nomeInicial: '', emailInicial: '', now: Date.parse('2026-10-13T12:00:00Z'),
+  checkoutAllowed: { PRO: true, BUSINESS: true },
   offers: { PRO: paidOffer('PRO', config), BUSINESS: paidOffer('BUSINESS', config) } };
 const render = extras => renderToStaticMarkup(createElement(PlanosView, { ...props, ...extras }));
 
@@ -67,4 +68,24 @@ test('successUrl adulterada nao afirma pagamento confirmado e datas usam Brasili
   assert.match(mensagemDoRetorno('BUSINESS', { status: 'active', plan_code: 'BUSINESS' }, 'sucesso'), /Business/);
   assert.equal(dataDoPlano('2026-11-08T02:59:59Z'), '07/11/2026');
   assert.equal(dataDoPlano('invalida'), null);
+});
+
+test('fora do canario exibe liberacao gradual sem formulario, sem ocultar plano existente', () => {
+  const checkoutAllowed = { PRO: false, BUSINESS: false };
+  const html = render({ checkoutAllowed, ready: false });
+  assert.match(html, /Assinaturas em liberação gradual/);
+  assert.match(html, /Disponível em breve/);
+  assert.doesNotMatch(html, /<form|Assinar Pro|Assinar Business|BILLING_CANARY_USER_ID/);
+  const active = render({ checkoutAllowed, current: 'PRO', billing: { status: 'active', plan_code: 'PRO', franquia_ia: 200 } });
+  assert.match(active, /Seu plano: Pro/);
+  assert.match(active, /200 análises de IA por mês/);
+  assert.doesNotMatch(active, /<form/);
+});
+
+test('canario oferece apenas o modal Pro e mantem Business indisponivel', () => {
+  const html = render({ checkoutAllowed: { PRO: true, BUSINESS: false } });
+  assert.equal([...html.matchAll(/<form\b/g)].length, 1);
+  assert.match(html, /Assinar Pro/);
+  assert.doesNotMatch(html, /Assinar Business/);
+  assert.match(html.split('aria-label="Plano Business"')[1], /Assinaturas em liberação gradual/);
 });

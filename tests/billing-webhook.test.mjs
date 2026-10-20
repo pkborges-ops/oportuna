@@ -56,11 +56,11 @@ test('erro de consulta nao vira confirmacao e checkout vazio nao e aceito', asyn
   }), false);
 });
 
-function handler(cobranca, resultado = 'processed', bancoCompativel = true) {
+function handler(cobranca, resultado = 'processed', bancoCompativel = true, environment = 'sandbox') {
   const chamadas = [];
   const dependencies = {
     '@/lib/billing/asaas': {
-      obterConfigAsaas: () => ({ environment: 'sandbox', webhookToken: 'token-ficticio-de-teste' }),
+      obterConfigAsaas: () => ({ environment, webhookToken: 'token-ficticio-de-teste' }),
       chamarAsaas: async path => {
         chamadas.push({ path });
         return path.startsWith('/payments?') ? { data: [], hasMore: false } : cobranca;
@@ -123,4 +123,10 @@ test('handler bloqueia banco de outro ambiente antes de qualquer consulta financ
   const { post, chamadas } = handler(confirmado, 'processed', false);
   assert.equal((await post(evento())).status, 503);
   assert.equal(chamadas.length, 0);
+});
+
+test('webhook produtivo continua processando confirmacao sem exigir permissao de canario', async () => {
+  const { post, chamadas } = handler(confirmado, 'processed', true, 'production');
+  assert.equal((await post(evento())).status, 200);
+  assert.equal(chamadas.filter(c => c.rpc === 'billing_processar_webhook_v1').length, 1);
 });

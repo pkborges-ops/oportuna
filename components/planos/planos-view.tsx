@@ -7,11 +7,12 @@ import { dataDoPlano, estadoDoPlano, type BillingEstado } from "@/lib/planos/apr
 type Props = {
   current: PlanCode; billing: BillingEstado | null; ready: boolean;
   offers: Record<PaidPlanCode, ReturnType<typeof paidOffer>>;
+  checkoutAllowed: Record<PaidPlanCode, boolean>;
   nomeInicial: string; emailInicial: string; error?: string; now?: number;
 };
 const priceLabel = (cents: number) => (cents / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export function PlanosView({ current, billing, ready, offers, nomeInicial, emailInicial, error, now }: Props) {
+export function PlanosView({ current, billing, ready, offers, checkoutAllowed, nomeInicial, emailInicial, error, now }: Props) {
   const until = billing?.plan_code === current ? dataDoPlano(billing.paid_until) : null;
   const quota = billing?.plan_code === current ? billing.franquia_ia : null;
   const pending = current === "FREE" && billing?.status && !["canceled", "expired"].includes(billing.status);
@@ -37,7 +38,8 @@ export function PlanosView({ current, billing, ready, offers, nomeInicial, email
         const actual = current === code;
         const offer = code === "FREE" ? null : offers[code];
         const rules = getPlanEntitlements(code);
-        const state = estadoDoPlano(code, current, billing, ready, code === "FREE" || Boolean(offer), now);
+        const state = estadoDoPlano(code, current, billing, ready, code === "FREE" || Boolean(offer), now,
+          code === "FREE" || checkoutAllowed[code]);
         const benefits = [
           code === "FREE" ? `${rules.aiAnalysisLimit} análise de IA de demonstração` :
             offer?.aiQuota ? `${offer.aiQuota.toLocaleString("pt-BR")} análises IA/mês` : "Franquia de IA sob consulta",

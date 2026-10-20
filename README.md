@@ -127,6 +127,18 @@ chave Asaas correspondente, preços/franquias completos e ambiente do banco
 compatível. Não há fallback entre ambientes. **Não configurar chaves reais,
 aplicar SQL em produção ou habilitar produção nesta etapa.**
 Ver [checklist de produção](docs/BILLING_PRODUCAO.md).
+Novos checkouts produtivos também exigem `BILLING_CANARY_ENABLED=true` e
+`BILLING_CANARY_USER_ID` com o UUID de `auth.users` de uma única conta controlada.
+Somente essa identidade autenticada pode contratar Pro; Business e demais
+usuários são bloqueados no endpoint e no serviço antes de alterar cliente,
+reservar ou chamar Asaas. Sem flag/UUID válido, todos os novos checkouts de
+produção ficam bloqueados. Sandbox preserva o fluxo de homologação.
+A página mostra "Assinaturas em liberação gradual" aos não elegíveis e envia
+somente booleanos de disponibilidade à apresentação, nunca o ID configurado.
+Query, formulário e metadata não alteram a regra. Ambas as variáveis são
+server-only, sem prefixo `NEXT_PUBLIC_`; não preencher um UUID real no Git.
+Desligar `BILLING_CANARY_ENABLED` não bloqueia webhook, entitlements nem o
+processamento das recorrências existentes; não cancela checkouts já emitidos.
 A migration `supabase/asaas_assinaturas_v1.sql` é reaplicável em homologação,
 depois de `planos_e_permissoes_v1.sql`, preservando registros e concessões Asaas.
 A instalação mantém `billing_configuracao.ambiente=sandbox`; só administrador

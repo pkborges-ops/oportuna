@@ -1,5 +1,6 @@
 import { criarOuReutilizarCheckout } from "@/lib/billing/checkout";
 import { pedidoCheckout } from "@/lib/billing/pedido";
+import { checkoutPermitido } from "@/lib/billing/canario";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 
 export async function POST(request: Request) {
@@ -12,6 +13,11 @@ export async function POST(request: Request) {
   try { form = await request.formData(); } catch { return new Response(null, { status: 400 }); }
   const { planCode, pagador } = pedidoCheckout(form);
   if (!planCode) return new Response(null, { status: 400 });
+  if (!checkoutPermitido(data.user.id, planCode)) {
+    return new Response("Assinaturas em liberação gradual.", {
+      status: 403, headers: { "content-type": "text/plain; charset=utf-8" },
+    });
+  }
   if (!pagador) {
     return Response.redirect(new URL("/planos?erro=Confira%20nome,%20CPF%20ou%20CNPJ,%20email,%20celular,%20CEP%20e%20numero%20do%20pagador.", request.url), 303);
   }
