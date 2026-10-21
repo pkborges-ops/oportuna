@@ -146,6 +146,13 @@ pode escolher production antes do primeiro registro de billing. Um projeto
 Supabase é dedicado a um único ambiente; não pode ser convertido depois de
 conter clientes, assinaturas, pagamentos ou eventos.
 
+O [contrato financeiro de franquias IA](docs/BILLING_CONCESSOES.md), preparado
+localmente, acrescenta `supabase/billing_concessoes_v1.sql` **depois** da migration
+base atualizada: concessão imutável por pagamento, revisões, revogação e outbox
+recuperável. Sua aplicação remota não está autorizada nesta etapa. Ainda depende
+do consumidor/guard da frente IA e do worker; não emite crédito retroativo ao
+instalar e não usa `paid_until` como identidade de franquia.
+
 Crie uma conta separada em [Asaas Sandbox](https://sandbox.asaas.com), entre
 como administrador e gere a chave em **Integrações → Chave de API**. Guarde-a
 somente no gerenciador de secrets ou nas variáveis locais. No Asaas Sandbox,
@@ -240,6 +247,8 @@ sem URL/credencial remota: testa upgrade do schema anterior, reaplicação sem
 alterar dados, fluxos Pro/Business, RLS, idempotência e separação de ambientes.
 `tests/sql/asaas-ambientes.sql` também termina em ROLLBACK; homologar o SQL
 atualizado no projeto de teste antes de publicar o novo código Preview.
+O runner inclui `tests/sql/billing-concessoes.sql`, com ROLLBACK, dublê descartável
+de consumidor, testes de recuperação/atomicidade e roles reais no banco em memória.
 
 ## Origem e tipo das oportunidades
 

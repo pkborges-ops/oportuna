@@ -592,7 +592,11 @@ begin
         periodo:=(venc + interval '1 month') at time zone 'America/Sao_Paulo';
         if pay.confirmado_em is null and pay.estornado_em is null then
           update public.billing_payments set status=ev,confirmado_em=now(),
-            periodo_fim=periodo,atualizado_em=now() where id=pay.id;
+            vencimento=venc,periodo_fim=periodo,atualizado_em=now() where id=pay.id
+            returning * into pay;
+          -- A migration financeira adicional pode fixar o periodo de calendario.
+          -- A projecao usa exatamente o fim persistido pelo pagamento.
+          periodo:=pay.periodo_fim;
           update public.billing_subscriptions set status_local='active',
             paid_until=greatest(coalesce(paid_until,periodo),periodo),
             proximo_vencimento=greatest(
@@ -623,7 +627,7 @@ begin
           where id=pay.id and estornado_em is null;
       elsif ev in ('PAYMENT_REFUNDED','PAYMENT_CHARGEBACK_REQUESTED') then
         update public.billing_payments set status=ev,estornado_em=now(),atualizado_em=now()
-          where id=pay.id;
+          where id=pay.id and estornado_em is null;
         if pay.periodo_fim>now() and s.paid_until<=pay.periodo_fim then
           update public.billing_subscriptions set status_local='review',atualizado_em=now()
             where id=s.id and not exists (

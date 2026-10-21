@@ -1715,3 +1715,63 @@ E2E Pro/Business e cenários financeiros negativos permanecem pendentes.
 - Recusa financeira ainda parcial, demais negativos financeiros sem E2E completo
   e investigação de latência fria continuam registrados; aprovação do commit
   não representa autorização para merge ou habilitação produtiva.
+
+### Contrato financeiro de franquias IA — local, 21/10/2026
+
+- Branch `feat/asaas-assinatura-pro`, base `c7e784b`, PR #9. Implementação somente
+  financeira: nova migration `billing_concessoes_v1.sql`, tipo/envelope v1 e
+  recuperador server-only. Nenhum arquivo de execução/consumo da branch IA foi
+  copiado ou alterado. Canário, checkout e handler HTTP de webhook preservados.
+- Cada pagamento possui snapshot de termos contratados e uma concessão estável,
+  com ambiente, usuário, assinatura, pagamento, plano, franquia, período, estado
+  e revisão. Confirmação, concessão, auditoria e entrega pendente são atômicas.
+  Eventos distintos do mesmo pagamento não duplicam o crédito. Revogação do ciclo
+  anterior independe de outro período posterior pago; revisão antiga não reativa.
+- Políticas e interface completas em `docs/BILLING_CONCESSOES.md`: calendário
+  de Brasília sem deriva em dias 29–31, antecipação sem liberação antecipada,
+  atraso sem deslocar ciclo, vencimento capturado imutável, revisão de casos
+  desalinhados/sobrepostos e termos legados, cancelamento preservando período
+  pago, administração com origem/referência/justificativa próprias. Não há
+  upgrade/downgrade automático ou fallback de franquia 200/1000.
+- PostgreSQL embarcado PGlite: **143 verificações financeiras PASS por ambiente**
+  (sandbox e production simulados em memória), além das suítes existentes de
+  billing/ambientes. Incluem primeira cobrança, renovação, duplicidade, ordem,
+  antecipação/atraso, calendário bissexto/não bissexto, estorno/chargeback,
+  cancelamento, manual, sobreposição, contrato novo, rollback por falha na outbox,
+  leases, consumidor ausente/incompatível/com erro, recuperação e revisão antiga.
+  Roles authenticated/anon não acessam tabelas/RPCs privadas; service_role pode
+  recuperar, mas não escrever pagamentos/concessões diretamente ou conceder
+  crédito manual. RLS ativa e ambientes cruzados rejeitados.
+- Upgrade/reaplicação: preservação das colunas/dados históricos, concessões e
+  entregas existentes PASS. Instalação não cria crédito retroativo. Pagamento
+  legado confirmado, quando tocado, permanece em revisão de termos, sem saldo
+  novo automático. Dublê de IA existe somente na transação descartável da suíte.
+- **157/157 testes JavaScript PASS**, lint PASS, TypeScript PASS,
+  `git diff --check` PASS, build PASS e geradores Unicode/paridade `--check` PASS
+  (via loader `--import ./tests/register.mjs`). Build avisa ausência de chave de
+  IA/e-mail locais, sem impedir compilação. Nenhum teste SQL usa credencial ou URL
+  remota; production nos resultados significa apenas simulação em memória.
+- Pendências de integração: frente Linux deve instalar hook SQL privado com
+  owner confiável, idempotência/revisão monotônica e guard da origem financeira
+  na mesma transação do consumo. Ligar recuperação a worker autorizado, monitorar
+  pendências, conciliar saldos legados sem reset e testar concorrência real em
+  homologação. Consumidor ainda ausente nesta branch: entregas permanecem pendentes.
+- SQL remoto, Supabase/credenciais Production, cobrança real, commit, push e
+  merge **não executados**. PR #9 remoto ainda não contém estas mudanças locais.
+  E2Es financeiros negativos e diagnóstico de latência fria mantêm os estados
+  anteriores; testes locais deste contrato não os substituem.
+
+### Revisão para publicação do contrato financeiro — 21/10/2026
+
+- Commit/push do contrato financeiro autorizados pelo usuário somente na branch
+  `feat/asaas-assinatura-pro`, mantendo PR #9 aberto e sem merge. Os 11 arquivos
+  candidatos pertencem ao SQL/interface/recuperação, testes ou documentação do
+  contrato. Nenhum arquivo da frente de consumo IA, canário, PNCP, dashboard ou
+  configuração Production foi modificado nesta etapa.
+- Validações repetidas: 157/157 testes PASS; 143 verificações financeiras SQL por
+  ambiente simulado PASS, além das suítes SQL existentes; upgrade/reaplicação com
+  preservação de dados/concessões/outbox PASS; lint, TypeScript, geradores,
+  diff check e build PASS. Production SQL significa apenas PGlite em memória.
+- Publicação não autoriza SQL remoto, credenciais reais, cobrança ou merge.
+  Permanecem pendentes consumidor/guard transacional na frente Linux, worker,
+  conciliação do legado, concorrência em homologação e E2Es negativos do Asaas.

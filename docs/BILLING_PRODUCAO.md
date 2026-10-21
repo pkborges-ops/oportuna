@@ -14,6 +14,10 @@ configurar secrets, criar cobrança real ou fazer merge nesta etapa.
   conciliação. A documentação Asaas recomenda persistência durável e processamento
   posterior; não considerar a entrega positiva Sandbox como prova de resiliência.
 - [ ] Registrar versão de rollback compatível com schema e receptor de eventos.
+- [ ] Integrar/revisar o [contrato financeiro de franquias](BILLING_CONCESSOES.md)
+  com a frente IA: consumidor SQL, guard de consumo na mesma transação,
+  recuperação por worker, conciliação do legado e teste concorrente de revogação.
+  Entrega financeira pendente não é crédito consumível nem confirmação da IA.
 
 ## Banco — somente após autorização futura
 
@@ -21,6 +25,10 @@ configurar secrets, criar cobrança real ou fazer merge nesta etapa.
   `planos_e_permissoes_v1.sql`, backup e permissões/RLS.
 - [ ] Revisar/aplicar manualmente `supabase/asaas_assinaturas_v1.sql`, já
   validada em homologação. Nenhum build ou teste executa SQL remotamente.
+- [ ] Revisar também as alterações locais posteriores do contrato financeiro:
+  migration base atualizada seguida de `supabase/billing_concessoes_v1.sql`.
+  **A nova versão financeira não foi aplicada remotamente.** Preservar histórico,
+  não fazer backfill automático de créditos e conferir RLS/grants/outbox.
 - [ ] Antes de qualquer registro de billing, administrador define exclusivamente
   nesse banco `billing_configuracao.ambiente=production`. Não há troca após
   existir histórico; nunca converter o projeto de homologação para produção.
