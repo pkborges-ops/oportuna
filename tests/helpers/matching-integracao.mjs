@@ -40,7 +40,8 @@ const self = JSON.stringify(
 );
 const mocks = {
   "@/lib/supabase/server": `import {client} from ${self}; export async function criarClienteSupabaseServer() { return client(); }`,
-  "@/lib/openai/analise-oportunidade": `import {state} from ${self}; export async function gerarAnaliseOportunidade() { state.aiCalls++; return {score: 81, resumo: 'IA manual', justificativa: 'Teste', pontos_atencao: []}; }`,
+  "@/lib/supabase/admin": `import {client} from ${self}; export function criarClienteSupabaseAdmin() { return client("admin"); }`,
+  "@/lib/openai/analise-oportunidade": `import {state} from ${self}; import {resultadoV2} from ${JSON.stringify(new URL("./analise-v2-fixture.mjs", import.meta.url).href)}; export async function gerarAnaliseOportunidade() { state.aiCalls++; return resultadoV2; }`,
   "next/navigation": `export function redirect(url) { throw Object.assign(new Error('redirect'), {url}); } export function notFound() { throw Error('not-found'); }`,
   "next/cache": "export function revalidatePath() {}",
   "next/link": `export {default} from ${JSON.stringify(new URL("./mock-link.mjs", import.meta.url).href)}`,
@@ -93,6 +94,7 @@ beforeEach(() => {
     oportunidades_editais: [structuredClone(opRow)],
     oportunidades_favoritos: [],
     analises_oportunidades: [],
+    ia_resultados_v1: [],
   };
   state.calls = [];
   state.aiCalls = 0;
@@ -204,7 +206,8 @@ test("detalhes usam mesmo perfil e separam aderência da IA persistida", async (
     ordenacao: "mais_novas",
   });
   assert.match(html, /90% aderência/);
-  assert.match(html, /81% · análise por IA/);
+  assert.doesNotMatch(html, /81% · análise por IA/);
+  assert.match(html, /Justificativa histórica/);
   assert.match(html, /Palavras encontradas: software/);
   assert.match(
     html,
@@ -245,7 +248,11 @@ test("IA continua manual e reutiliza análise persistida; matching não escreve"
     e.url.includes("perfilId=p1"),
   );
   assert.equal(state.aiCalls, 1);
-  assert.equal(state.tables.analises_oportunidades[0].score, 81);
+  assert.equal(state.tables.ia_resultados_v1[0].score, null);
+  assert.equal(state.tables.ia_resultados_v1[0].versao_schema, 2);
+  assert.equal(state.calls.find(c => c.rpc === "ia_reservar_v1").contexto, "usuario");
+  assert.equal(state.calls.find(c => c.rpc === "ia_iniciar_v1").contexto, "admin");
+  assert.equal(state.calls.find(c => c.rpc === "ia_finalizar_v1").contexto, "admin");
   await assert.rejects(analisarOportunidade(data), (e) =>
     e.url.includes("existente"),
   );
@@ -443,4 +450,28 @@ test('ciclo: dashboard conta acionáveis e mostra total completo separadamente',
   assert.ok(html.includes('Oportunidades ativas / a confirmar'));assert.match(html,/Base completa: 2 oportunidades/);
   const {obterResumoOportunidades}=await import('../../services/oportunidades-service.ts');
   const resumo=await obterResumoOportunidades();assert.equal(resumo.total,1);assert.equal(resumo.totalBase,2);
+});
+
+test("conteúdo v2 aparece sem score IA e mantém matching Free bloqueado",async()=>{
+ state.plan='FREE';
+ state.tables.ia_resultados_v1.push({
+   execucao_id:'v2',usuario_id:'u1',oportunidade_id:'o1',perfil_id:'p1',
+   versao_schema:2,score:null,justificativa:null,pontos_atencao:null,
+   resumo:'IA manual',conteudo:(await import('./analise-v2-fixture.mjs')).resultadoV2,criado_em:'2026-10-21',
+ });
+ const html=await renderDetail({perfilId:'p1'});
+ assert.match(html,/Compatibilidade com a empresa/);
+ assert.match(html,/Informação a confirmar/); assert.match(html,/Próximo passo/);
+ assert.doesNotMatch(html,/90% aderência|81%|Palavras encontradas: software/);
+ assert.equal(state.aiCalls,0);
+});
+test("histórico da Etapa 1 continua consultável sem reinterpretar score",async()=>{
+ state.tables.ia_resultados_v1.push({
+   execucao_id:'v1',usuario_id:'u1',oportunidade_id:'o1',perfil_id:'p1',versao_schema:1,
+   score:81,resumo:'Resumo histórico',justificativa:'Justificativa original',pontos_atencao:['Ponto original'],criado_em:'2026-10-20',
+ });
+ const html=await renderDetail({perfilId:'p1'});
+ assert.match(html,/Justificativa original/); assert.match(html,/Ponto original/);
+ assert.doesNotMatch(html,/81%/); assert.equal(state.tables.ia_resultados_v1[0].score,81);
+ assert.equal(state.aiCalls,0);
 });

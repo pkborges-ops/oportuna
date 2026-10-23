@@ -447,13 +447,13 @@ export default async function DetalheOportunidadePage({
               <div>
                 <CardTitle>Analise por IA</CardTitle>
                 <CardDescription>
-                  Análise aprofundada, gerada manualmente para o perfil
-                  selecionado.
+                  Avaliação dos dados disponíveis para o perfil selecionado.
+                  Edital completo e anexos não foram analisados.
                 </CardDescription>
               </div>
               {analise ? (
                 <span className="w-fit rounded-md bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800">
-                  {analise.score}% · análise por IA
+                  Análise por IA
                 </span>
               ) : null}
             </div>
@@ -500,21 +500,44 @@ export default async function DetalheOportunidadePage({
                   <p className="mt-2">{analise.resumo}</p>
                 </div>
                 <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
-                  <span className="font-semibold">Justificativa: </span>
-                  {analise.justificativa}
+                  <span className="font-semibold">{analise.versaoSchema === 2 ? "Compatibilidade com a empresa: " : "Justificativa histórica: "}</span>
+                  {analise.versaoSchema === 2 ? analise.conteudo.compatibilidade_empresa : analise.justificativa}
                 </div>
                 <div>
                   <h3 className="font-semibold text-slate-950">
                     Pontos de atenção
                   </h3>
                   <ul className="mt-3 grid gap-2 text-sm text-slate-600">
-                    {analise.pontosAtencao.map((item) => (
+                    {analise.versaoSchema === 2 ? analise.conteudo.pontos_atencao.map((item, index) => (
+                      <li key={index} className="rounded-md bg-amber-50 p-3">
+                        <p className="font-semibold">{item.titulo}</p>
+                        <p>{item.classificacao === "fato_identificado" ? "Fato identificado" : "Informação a confirmar"}</p>
+                        <p>{item.explicacao}</p>
+                        <p>Ação recomendada: {item.acao_recomendada}</p>
+                      </li>
+                    )) : analise.pontosAtencao.map((item) => (
                       <li key={item} className="rounded-md bg-amber-50 p-3">
                         {item}
                       </li>
                     ))}
                   </ul>
                 </div>
+                {analise.versaoSchema === 2 ? (
+                  <>
+                    <div className="text-sm leading-6 text-slate-700">
+                      <h3 className="font-semibold">Informações não verificadas</h3>
+                      <ul>{analise.conteudo.informacoes_nao_verificadas.map((item, index) => <li key={index}>{item}</li>)}</ul>
+                      {analise.conteudo.informacoes_nao_verificadas.length === 0 ? <p>Nenhuma lacuna adicional destacada nesta análise.</p> : null}
+                    </div>
+                    <div className="rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">
+                      <h3 className="font-semibold">Próximo passo</h3>
+                      <p>{analise.conteudo.proximo_passo}</p>
+                    </div>
+                  </>
+                ) : null}
+                <p className="text-sm text-slate-500">
+                  Esta análise não comprova habilitação nem capacidade de execução.
+                </p>
                 <p className="text-sm text-slate-500">
                   Perfil usado na análise:{" "}
                   <span className="font-semibold text-slate-950">

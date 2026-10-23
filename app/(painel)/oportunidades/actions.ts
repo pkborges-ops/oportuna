@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { gerarAnaliseOportunidade } from "@/lib/openai/analise-oportunidade";
+import { prepararDadosAnalise } from "@/lib/analises/contrato";
+import { executarAnaliseSegura } from "@/lib/analises/executar";
+import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
 import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 import { registrarEventoPlano } from "@/lib/planos/eventos";
 import { buscarOportunidadePorId } from "@/services/oportunidades-service";
@@ -130,44 +133,48 @@ export async function analisarOportunidade(formData: FormData) {
     redirect(`${redirectTo}&mensagem=Analise existente reutilizada.`);
   }
 
-  const { data: reserva, error: erroReserva } = await supabase.rpc("reservar_analise_ia_v1", {
-    p_perfil_id: perfilId, p_oportunidade_id: oportunidadeId,
-  });
-  if (erroReserva) redirecionarComErro(redirectTo, "Não foi possível reservar a análise.");
-  if (!reserva) {
-    await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_ia");
-    redirecionarComErro(redirectTo, "Limite de análises por IA atingido ou análise em andamento.");
-  }
-
+  let codigo: string;
   try {
     const [oportunidade, perfil] = await Promise.all([
       buscarOportunidadePorId(oportunidadeId),
       buscarPerfilPorId(perfilId),
     ]);
     if (!oportunidade || !perfil) throw new Error("Perfil ou oportunidade invalida.");
-    const analise = await gerarAnaliseOportunidade({ oportunidade, perfil });
-
-    const { error } = await supabase.from("analises_oportunidades").insert({
-      usuario_id: usuarioId,
-      oportunidade_id: oportunidadeId,
-      perfil_id: perfilId,
-      score: analise.score,
-      justificativa: analise.justificativa,
-      resumo: analise.resumo,
-      pontos_atencao: analise.pontos_atencao,
+    // Identidade vem de getUser; hash, versão e snapshot nunca vêm do formulário.
+    const admin = criarClienteSupabaseAdmin();
+    const resultado = await executarAnaliseSegura({
+      // Reserva leva o JWT real: auth.uid() é conferido dentro da transação SQL.
+      // Token e operações de execução continuam exclusivos do backend.
+      rpc: (nome, args) => nome === "ia_reservar_v1"
+        ? supabase.rpc(nome, args)
+        : admin.rpc(nome, args),
+      gerar: () => gerarAnaliseOportunidade({ oportunidade, perfil }),
+      usuarioId, perfilId, oportunidadeId,
+      dados: prepararDadosAnalise(oportunidade, perfil),
     });
-
-    if (error) throw new Error("Nao foi possivel salvar a analise.");
-  } catch (error) {
-    const mensagem =
-      error instanceof Error
-        ? error.message
-        : "Nao foi possivel gerar a analise por IA.";
-    redirecionarComErro(redirectTo, mensagem);
-  } finally {
-    await supabase.rpc("liberar_reserva_ia_v1", { p_reserva_id: reserva });
+    codigo = resultado.codigo;
+    if (codigo === "INCERTA") {
+      console.warn("ia_execucao_requer_reconciliacao", {
+        usuarioId, execucaoId: resultado.execucao_id, codigo,
+      });
+    }
+  } catch {
+    redirecionarComErro(redirectTo, "Não foi possível preparar a análise.");
+  }
+  if (codigo === "LIMITE_ATINGIDO") {
+    await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_ia");
+  }
+  if (codigo !== "CONCLUIDA" && codigo !== "EXISTENTE") {
+    const mensagens: Record<string, string> = {
+      LIMITE_ATINGIDO: "Limite de análises por IA atingido.",
+      CICLO_NAO_AUTORIZADO: "O ciclo da assinatura ainda não está disponível para análises.",
+      EM_ANDAMENTO: "Esta análise já está em andamento.",
+      INCERTA: "Estamos verificando o resultado desta análise. Não será iniciada outra automaticamente.",
+      FALHOU: "Não foi possível concluir a análise. Nenhuma unidade foi consumida.",
+    };
+    redirecionarComErro(redirectTo, mensagens[codigo] ?? "Não foi possível iniciar a análise.");
   }
 
   revalidatePath(`/oportunidades/${oportunidadeId}`);
-  redirect(`${redirectTo}&mensagem=Analise gerada com sucesso.`);
+  redirect(`${redirectTo}&mensagem=${codigo === "EXISTENTE" ? "Analise existente reutilizada." : "Analise gerada com sucesso."}`);
 }
