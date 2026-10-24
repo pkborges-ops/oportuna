@@ -118,6 +118,138 @@ npm run lint
 npm run build
 ```
 
+## Planos Free, Pro e Business com Asaas
+
+Sandbox usa somente o Supabase de homologação `uzmgxxhiedevsxedgqij`.
+O suporte técnico a `production` é explícito, mas fica desabilitado por padrão:
+exige `ASAAS_PRODUCTION_ENABLED=true`, URL Supabase produtiva fixada no servidor,
+chave Asaas correspondente, preços/franquias completos e ambiente do banco
+compatível. Não há fallback entre ambientes. **Não configurar chaves reais,
+aplicar SQL em produção ou habilitar produção nesta etapa.**
+Ver [checklist de produção](docs/BILLING_PRODUCAO.md).
+Novos checkouts produtivos também exigem `BILLING_CANARY_ENABLED=true` e
+`BILLING_CANARY_USER_ID` com o UUID de `auth.users` de uma única conta controlada.
+Somente essa identidade autenticada pode contratar Pro; Business e demais
+usuários são bloqueados no endpoint e no serviço antes de alterar cliente,
+reservar ou chamar Asaas. Sem flag/UUID válido, todos os novos checkouts de
+produção ficam bloqueados. Sandbox preserva o fluxo de homologação.
+A página mostra "Assinaturas em liberação gradual" aos não elegíveis e envia
+somente booleanos de disponibilidade à apresentação, nunca o ID configurado.
+Query, formulário e metadata não alteram a regra. Ambas as variáveis são
+server-only, sem prefixo `NEXT_PUBLIC_`; não preencher um UUID real no Git.
+Desligar `BILLING_CANARY_ENABLED` não bloqueia webhook, entitlements nem o
+processamento das recorrências existentes; não cancela checkouts já emitidos.
+A migration `supabase/asaas_assinaturas_v1.sql` é reaplicável em homologação,
+depois de `planos_e_permissoes_v1.sql`, preservando registros e concessões Asaas.
+A instalação mantém `billing_configuracao.ambiente=sandbox`; só administrador
+pode escolher production antes do primeiro registro de billing. Um projeto
+Supabase é dedicado a um único ambiente; não pode ser convertido depois de
+conter clientes, assinaturas, pagamentos ou eventos.
+
+O [contrato financeiro de franquias IA](docs/BILLING_CONCESSOES.md), preparado
+localmente, acrescenta `supabase/billing_concessoes_v1.sql` **depois** da migration
+base atualizada: concessão imutável por pagamento, revisões, revogação e outbox
+recuperável. Sua aplicação remota não está autorizada nesta etapa. Ainda depende
+do consumidor/guard da frente IA e do worker; não emite crédito retroativo ao
+instalar e não usa `paid_until` como identidade de franquia.
+
+Crie uma conta separada em [Asaas Sandbox](https://sandbox.asaas.com), entre
+como administrador e gere a chave em **Integrações → Chave de API**. Guarde-a
+somente no gerenciador de secrets ou nas variáveis locais. No Asaas Sandbox,
+cadastre um Webhook para `https://SEU-HOST-DE-HOMOLOGACAO/api/webhooks/asaas`,
+com token de autenticação próprio (32–255 caracteres), envio sequencial e os
+eventos Checkout, assinatura e cobrança tratados na migration. O endpoint
+precisa ser HTTPS público; `localhost` não recebe notificações do Asaas.
+
+Variáveis do servidor (não coloque valores no Git nem no chat):
+
+```text
+ASAAS_ENVIRONMENT=sandbox
+ASAAS_API_KEY=<chave do Sandbox>
+ASAAS_WEBHOOK_TOKEN=<mesmo authToken configurado no Webhook>
+ASAAS_PRODUCTION_ENABLED=false
+PRO_MONTHLY_PRICE=99.00
+BUSINESS_MONTHLY_PRICE=197.00
+PRO_MONTHLY_AI_LIMIT=200
+BUSINESS_MONTHLY_AI_LIMIT=1000
+APP_BASE_URL=https://SEU-HOST-DE-HOMOLOGACAO
+SUPABASE_SECRET_KEY=<chave secret do Supabase de homologação>
+```
+
+Os preços de R$ 99,00 (Pro) e R$ 197,00 (Business) e as franquias de 200 e
+1.000 análises/mês são valores de teste do Sandbox. Ajuste essas quatro
+variáveis no ambiente de homologação para mudá-los; não é necessária migration.
+O Free permanece gratuito e não cria Checkout.
+
+`NEXT_PUBLIC_SUPABASE_URL` deve apontar para o projeto de homologação. A chave
+Asaas usa o header `access_token` apenas no servidor; o webhook usa o header
+`asaas-access-token`. Não existe `NEXT_PUBLIC_ASAAS_API_KEY`. O preço é lido
+do catálogo server-side `PLAN_CATALOG` por plano. Sem preço válido para um plano,
+o botão de contratação correspondente fica indisponível. FREE nunca cria
+checkout. O navegador envia apenas `plan=PRO` ou `plan=BUSINESS`; nome, ciclo
+e preço são resolvidos no servidor. Business só é contratável quando as duas
+franquias mensais de IA estão configuradas e a sua é maior que a Pro. A
+migration armazena `plan_code`, valor, franquia, ciclo, gateway e ambiente na
+tentativa.
+
+O fluxo é: usuário Free seleciona Pro ou Business e informa dados do pagador no modal de `/planos` →
+servidor cria/reutiliza cliente e Checkout hospedado recorrente com cartão →
+retorno do navegador mostra estado pendente → webhook financeiro
+`PAYMENT_CONFIRMED`, correlacionado a cliente, assinatura, usuário e valor.
+Na primeira cobrança, o servidor também confirma no Asaas que ela pertence à
+sessão de checkout armazenada antes de vincular a assinatura. Depois disso,
+concede exatamente o `plan_code` registrado até o fim do mês pago. `successUrl`, `CHECKOUT_PAID` e
+`SUBSCRIPTION_CREATED` isolados não concedem acesso. Pagamento vencido ou
+recusado não retira um período já pago; estorno integral e chargeback do
+período vigente suspendem o acesso para revisão. As assinaturas pagas manuais
+anteriores permanecem protegidas. Uma assinatura paga ativa impede outro
+checkout, inclusive após cancelamento enquanto `paid_until` ainda vigora.
+Upgrade e downgrade exigem atendimento nesta versão. Não há cancelamento automático na interface
+nesta versão; suporte deve conciliar/inativar a recorrência no Asaas.
+Se a criação do Checkout perder a resposta, o evento `CHECKOUT_CREATED` tenta
+recuperar o ID pela referência e cliente esperados; sem essa confirmação, a
+tentativa permanece bloqueada para conciliação manual, sem gerar outro Checkout.
+
+O Business ainda não tem teto comercial definitivo de perfis. Preços e franquias
+acima servem somente para testes no Sandbox, sem aprovação comercial para
+produção. Preço e franquia configurados no ambiente são obrigatórios para
+abrir checkout Business. O teto de perfis
+fica configurável em `planos_limites_perfis`: `NULL` significa sem teto
+provisório; só o papel de serviço pode alterar a configuração. A franquia de IA
+é capturada na assinatura local e projetada em `assinaturas_usuario.franquia_ia`.
+Para Pro, `NULL` preserva o comportamento provisório sem teto. Equipes, alertas avançados e
+Assistente de Participação não foram implementados; o acesso continua individual.
+
+Para homologar futuramente, use uma conta Free de teste, escolha um plano e pague
+somente com os [cartões de teste oficiais](https://docs.asaas.com/docs/testing-credit-card-payment).
+Confira no banco o evento processado, cobrança, `paid_until` e a projeção
+`assinaturas_usuario`, depois confirme os entitlements na aplicação. Repita
+com cartão recusado, cancelamento, expiração e reenvio do mesmo webhook. O
+script `tests/sql/asaas-billing.sql` exercita eventos sintéticos e termina em
+`ROLLBACK`; execute-o no SQL Editor da homologação após a migration. Nenhum
+teste Sandbox movimenta dinheiro real, mas notificações podem ser enviadas:
+use apenas contatos de teste autorizados. Sandbox e produção têm contas,
+chaves e URLs de API diferentes.
+
+`billing_verificar_ambiente_v1` valida o ambiente selecionado contra o banco.
+Cada operação do servidor passa por `billing_executar_v1`, com allowlist de
+operações e validação do ambiente na mesma transação. Esses helpers são somente
+de serviço; nenhuma permissão financeira foi concedida ao usuário comum.
+Endpoints de API são constantes por ambiente. Checkout aceita somente HTTPS,
+host exato e caminho permitido: `sandbox.asaas.com` no Sandbox, `asaas.com` em
+produção. Sandbox conserva `/000/checkoutSession/`; produção aceita apenas o
+caminho documentado `/checkoutSession/`. Nenhuma chamada produtiva foi feita.
+
+Validação SQL offline: instalar `@electric-sql/pglite@0.5.9` somente em pasta
+temporária e configurar `BILLING_SQL_PGLITE_PATH` para seu `dist/index.js`;
+executar `node scripts/validar-billing-sql-local.mjs`. Usa PostgreSQL em memória,
+sem URL/credencial remota: testa upgrade do schema anterior, reaplicação sem
+alterar dados, fluxos Pro/Business, RLS, idempotência e separação de ambientes.
+`tests/sql/asaas-ambientes.sql` também termina em ROLLBACK; homologar o SQL
+atualizado no projeto de teste antes de publicar o novo código Preview.
+O runner inclui `tests/sql/billing-concessoes.sql`, com ROLLBACK, dublê descartável
+de consumidor, testes de recuperação/atomicidade e roles reais no banco em memória.
+
 ## Origem e tipo das oportunidades
 
 O contrato central continua sendo `Opportunity`, persistido na tabela histórica
@@ -579,7 +711,7 @@ Sequência manual em banco de homologação:
 A validação no banco é pré-requisito para considerar a paridade confiável e liberar
 commit/publicação desta etapa. A aplicação não tenta executar a migration ao iniciar.
 
-### Planos Free e Pro (sem cobrança)
+### Base de planos Free e Pro
 
 A migration aditiva [`supabase/planos_e_permissoes_v1.sql`](supabase/planos_e_permissoes_v1.sql)
 depende das migrations de perfis, favoritos, análises, alertas e oportunidades V2.
@@ -589,7 +721,8 @@ Em um projeto isolado criado para homologar oportunidades, confira se
 de planos verifica essas dependências antes de criar qualquer tabela.
 Ela **não é executada por build, testes, workflow ou aplicação**. Homologar antes;
 em produção, aplicar e validar manualmente antes de publicar o código desta etapa.
-Nenhum pagamento ou preço foi definido. Cada assinatura pertence a um usuário do
+Essa migration, isoladamente, não define pagamento ou preço; a integração
+Sandbox desta branch está descrita acima. Cada assinatura pertence a um usuário do
 Supabase Auth; não há organização nem múltiplos usuários por conta. Sem registro
 ou com assinatura inativa/vencida, o plano efetivo é Free. Um trigger cria o
 registro Free para novos usuários, sem backfill destrutivo para os antigos.

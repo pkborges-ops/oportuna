@@ -1,38 +1,38 @@
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PlanViewEvent } from "@/components/planos/upgrade-prompt";
-import { getPlanEntitlements } from "@/lib/planos/entitlements";
+import { PlanosView } from "@/components/planos/planos-view";
+import { paidOffer } from "@/lib/planos/catalogo";
+import { type BillingEstado } from "@/lib/planos/apresentacao";
+import { obterConfigAsaas } from "@/lib/billing/asaas";
+import { criarClienteBilling } from "@/lib/billing/banco";
+import { checkoutPermitido } from "@/lib/billing/canario";
+import { criarClienteSupabaseServer } from "@/lib/supabase/server";
 import { obterPlanoAtual } from "@/services/planos-service";
 
-export default async function PlanosPage() {
+export default async function PlanosPage({ searchParams }: {
+  searchParams: Promise<{ erro?: string }>;
+}) {
   const plano = await obterPlanoAtual();
-  const free = getPlanEntitlements("FREE");
-  const pro = getPlanEntitlements("PRO");
-  return <div className="grid gap-6">
+  const supabase = await criarClienteSupabaseServer();
+  const [{ data: { user } }, { data: estado, error: estadoErro }, params] = await Promise.all([
+    supabase.auth.getUser(), supabase.rpc("billing_estado_atual_v1"), searchParams,
+  ]);
+  const nomeConta = user?.user_metadata?.nome ?? user?.user_metadata?.full_name ?? user?.user_metadata?.name;
+  const checkoutAllowed = {
+    PRO: checkoutPermitido(user?.id, "PRO"), BUSINESS: checkoutPermitido(user?.id, "BUSINESS"),
+  };
+  let ready = false;
+  if (!estadoErro && (checkoutAllowed.PRO || checkoutAllowed.BUSINESS)) {
+    try {
+      const config = obterConfigAsaas();
+      await criarClienteBilling(config.environment);
+      ready = true;
+    } catch { /* Sem configuracao compativel, nenhuma contratacao e oferecida. */ }
+  }
+  return <>
     <PlanViewEvent />
-    <section>
-      <h2 className="text-2xl font-semibold text-slate-950">Planos</h2>
-      <p className="mt-1 text-slate-600">Seu plano atual: {plano.codigo}. O Pro estará disponível em breve.</p>
-    </section>
-    <div className="grid gap-4 md:grid-cols-2">
-      <Card><CardHeader><CardTitle>Free</CardTitle></CardHeader><CardContent>
-        <ul className="grid list-disc gap-2 pl-5 text-sm text-slate-700">
-          <li>{free.maxProfiles} perfil de empresa</li>
-          <li>{free.dailyMatchViews} novos scores por dia</li>
-          <li>{free.maxFavorites} favoritos</li>
-          <li>{free.aiAnalysisLimit} análise por IA de demonstração</li>
-          <li>Histórico dos últimos {free.historyDays} dias</li>
-          <li>Sem alertas automáticos</li>
-        </ul>
-      </CardContent></Card>
-      <Card><CardHeader><CardTitle>Pro — em breve</CardTitle></CardHeader><CardContent>
-        <ul className="grid list-disc gap-2 pl-5 text-sm text-slate-700">
-          <li>Até {pro.maxProfiles} perfis de empresa</li>
-          <li>Scores e favoritos ilimitados</li>
-          <li>Alertas automáticos</li>
-          <li>Histórico completo</li>
-          <li>Análises por IA com franquia ampliada e configurável</li>
-        </ul>
-      </CardContent></Card>
-    </div>
-  </div>;
+    <PlanosView current={plano.codigo} billing={estado as BillingEstado | null} ready={ready} checkoutAllowed={checkoutAllowed}
+      offers={{ PRO: paidOffer("PRO"), BUSINESS: paidOffer("BUSINESS") }}
+      nomeInicial={typeof nomeConta === "string" ? nomeConta.slice(0, 120) : ""}
+      emailInicial={user?.email ?? ""} error={params.erro ? "Não foi possível continuar. Confira os dados do pagador ou acompanhe a situação da assinatura." : undefined} />
+  </>;
 }
