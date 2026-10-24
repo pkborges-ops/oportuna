@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { PainelIA } from "@/components/analises/painel-ia";
+import { consultarFranquiaIA } from "@/services/franquia-ia-service";
+import { consultarInterfaceIA } from "@/services/interface-ia-service";
 import { BadgeSituacao } from "@/components/oportunidades/situacao";
 import { notFound } from "next/navigation";
 
@@ -206,9 +209,17 @@ export default async function DetalheOportunidadePage({
   const match = perfilSelecionado
     ? await calcularMatchOportunidade(perfilSelecionado.id, oportunidade.id)
     : undefined;
-  const analise = perfilSelecionado
-    ? await buscarAnalisePorPerfil(oportunidade.id, perfilSelecionado.id)
-    : undefined;
+  const [saldo, estadoIA] = await Promise.allSettled([
+    consultarFranquiaIA(),
+    perfilSelecionado ? consultarInterfaceIA(oportunidade, perfilSelecionado) : Promise.resolve(undefined),
+  ]);
+  const interfaceIA = estadoIA.status === "fulfilled" ? estadoIA.value : undefined;
+  let analise;
+  let indisponivel = saldo.status === "rejected" || estadoIA.status === "rejected";
+  try {
+    analise = perfilSelecionado ? await buscarAnalisePorPerfil(oportunidade.id, perfilSelecionado.id, interfaceIA?.resultado?.id) : undefined;
+  } catch { indisponivel = true; }
+  const feedback = typeof rawQuery.ia === "string" ? rawQuery.ia : undefined;
 
   return (
     <div className="grid gap-6">
@@ -441,94 +452,10 @@ export default async function DetalheOportunidadePage({
           <ComoParticipar participacao={oportunidade.participacao} situacao={oportunidade.situacaoOperacional} />
         </div>
 
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div>
-                <CardTitle>Analise por IA</CardTitle>
-                <CardDescription>
-                  Análise aprofundada, gerada manualmente para o perfil
-                  selecionado.
-                </CardDescription>
-              </div>
-              {analise ? (
-                <span className="w-fit rounded-md bg-emerald-100 px-3 py-1 text-sm font-bold text-emerald-800">
-                  {analise.score}% · análise por IA
-                </span>
-              ) : null}
-            </div>
-          </CardHeader>
-          <CardContent className="grid gap-5">
-            {query.erro ? (
-              <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm font-medium text-red-800">
-                {query.erro}
-              </div>
-            ) : null}
-            {plano.codigo === "FREE" && query.erro?.includes("análises") ? (
-              <UpgradePrompt titulo="Limite de análises por IA"
-                descricao="O Free inclui uma análise de demonstração."
-                recurso="ia" />
-            ) : null}
-            {query.mensagem ? (
-              <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm font-medium text-emerald-800">
-                {query.mensagem}
-              </div>
-            ) : null}
-
-            {perfilSelecionado ? (
-              <form action={analisarOportunidade}>
-                <input
-                  type="hidden"
-                  name="oportunidadeId"
-                  value={oportunidade.id}
-                />
-                <input
-                  type="hidden"
-                  name="perfilId"
-                  value={perfilSelecionado.id}
-                />
-                <Button type="submit" disabled={Boolean(analise)}>
-                  {analise ? "Análise já gerada" : "Analisar oportunidade"}
-                </Button>
-              </form>
-            ) : null}
-
-            {analise ? (
-              <>
-                <div className="rounded-lg bg-slate-50 p-4 text-sm leading-6 text-slate-700">
-                  <p className="font-semibold text-slate-950">Resumo</p>
-                  <p className="mt-2">{analise.resumo}</p>
-                </div>
-                <div className="rounded-lg border border-cyan-200 bg-cyan-50 p-4 text-sm leading-6 text-cyan-950">
-                  <span className="font-semibold">Justificativa: </span>
-                  {analise.justificativa}
-                </div>
-                <div>
-                  <h3 className="font-semibold text-slate-950">
-                    Pontos de atenção
-                  </h3>
-                  <ul className="mt-3 grid gap-2 text-sm text-slate-600">
-                    {analise.pontosAtencao.map((item) => (
-                      <li key={item} className="rounded-md bg-amber-50 p-3">
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-                <p className="text-sm text-slate-500">
-                  Perfil usado na análise:{" "}
-                  <span className="font-semibold text-slate-950">
-                    {perfilSelecionado?.nomeEmpresa}
-                  </span>
-                </p>
-              </>
-            ) : perfilSelecionado ? (
-              <div className="rounded-lg bg-slate-50 p-4 text-sm text-slate-600">
-                Nenhuma análise gerada para este perfil ainda.
-              </div>
-            ) : null}
-          </CardContent>
-        </Card>
+        <PainelIA franquia={saldo.status === "fulfilled" ? saldo.value : undefined}
+          interfaceIA={interfaceIA} analise={analise} indisponivel={indisponivel}
+          perfilId={perfilSelecionado?.id} oportunidadeId={oportunidade.id}
+          destino={destino} feedback={feedback} action={analisarOportunidade} />
       </section>
     </div>
   );

@@ -5,6 +5,8 @@ import path from 'node:path';
 import ts from 'typescript';
 registerHooks({
   resolve(specifier, context, nextResolve) {
+    // Marcador de build Next: os testes Node exercitam somente o caminho servidor.
+    if (specifier === "server-only") return { url: "data:text/javascript,export {}", shortCircuit: true };
     if (specifier.startsWith('@/')) {
       const base = path.resolve(specifier.slice(2));
       const file = [base + '.ts', base + '.tsx', base + '/index.ts'].find(existsSync);

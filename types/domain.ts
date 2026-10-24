@@ -73,12 +73,17 @@ export type OpportunityAIAnalysis = {
   id: string;
   oportunidadeId: string;
   perfilId: string;
+  resumo: string;
+  criadoEm: string;
+} & ({
+  versaoSchema: 1;
   score: number;
   justificativa: string;
-  resumo: string;
   pontosAtencao: string[];
-  criadoEm: string;
-};
+} | {
+  versaoSchema: 2;
+  conteudo: import("@/lib/analises/contrato").ResultadoAnalise;
+});
 
 export type AlertFrequency = "diaria" | "semanal";
 

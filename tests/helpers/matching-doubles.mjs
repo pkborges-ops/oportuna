@@ -4,13 +4,22 @@ import { ordenarOportunidades } from "../../lib/matching/ordenar-oportunidades.t
 import { classificarSituacao } from "../../lib/oportunidades/ciclo-vida.ts";
 export const state = { tables: {}, calls: [], aiCalls: 0, rpcRows: undefined, rpcError: null,
   plan: 'PRO', scoreUnlocks: new Set(), aiReservation: 'reserva-1' };
-export function client() {
+export function client(contexto = "usuario") {
   return {
     auth: {
       getUser: async () => ({ data: { user: { id: "u1" } }, error: null }),
     },
     async rpc(name, args) {
-      state.calls.push({ rpc: name, args, operation: "select" });
+      state.calls.push({ rpc: name, args, operation: "select", contexto });
+      if (name === 'ia_consultar_franquia_v1') return { data: state.franquia ?? {
+        codigo:'OK',plano:state.plan,limite:3,consumidas:0,reservadas:0,disponiveis:3,inicio:null,fim:null,renovacao:null,
+      }, error:null };
+      if (name === 'ia_consultar_interface_v1') {
+        const rows=(state.tables.ia_execucoes_v1 ?? []).filter(r=>r.usuario_id==='u1' && r.perfil_id===args.p_perfil && r.oportunidade_id===args.p_oportunidade);
+        const completed=rows.filter(r=>r.estado==='completed');
+        const result=completed.find(r=>r.dados_hash===args.p_hash) ?? completed.at(-1);
+        return {data:{estado:state.estadoIA ?? null,resultado:result ? {id:result.id,hash:result.dados_hash,versao:result.versao,snapshot:result.snapshot} : null},error:state.erroIA ?? null};
+      }
       if (name === 'plano_atual_v1') return { data: state.plan, error: null };
       if (name === 'desbloquear_score_v1') {
         state.scoreUnlocks.add(`${args.p_perfil_id}:${args.p_oportunidade_id}`);
@@ -18,6 +27,26 @@ export function client() {
       }
       if (name === 'reservar_analise_ia_v1') return { data: state.aiReservation, error: null };
       if (name === 'liberar_reserva_ia_v1') return { data: null, error: null };
+      if (name === 'ia_reservar_v1') {
+        const existing = state.tables.ia_resultados_v1?.find(r => r.perfil_id === args.p_perfil &&
+          r.oportunidade_id === args.p_oportunidade && r.hash === args.p_hash);
+        state.aiArgs = args;
+        if (state.codigoReserva) return { data: { codigo: state.codigoReserva }, error:null };
+        return { data: { codigo: existing ? 'EXISTENTE' : 'RESERVADA', execucao_id: 'execucao-1' }, error: null };
+      }
+      if (name === 'ia_iniciar_v1') return { data: { codigo: 'INICIADA', token: 'token-1' }, error: null };
+      if (name === 'ia_finalizar_v1') {
+        (state.tables.ia_execucoes_v1 ??= []).push({ id:args.p_execucao,usuario_id:args.p_usuario,
+          perfil_id:state.aiArgs.p_perfil,oportunidade_id:state.aiArgs.p_oportunidade,estado:'completed',
+          dados_hash:state.aiArgs.p_hash,versao:state.aiArgs.p_versao,snapshot:state.aiArgs.p_snapshot });
+        state.tables.ia_resultados_v1.push({
+          versao_schema: 2, conteudo: args.p_resultado, resumo: args.p_resultado.resumo,
+          score: null, justificativa: null, pontos_atencao: null, execucao_id: args.p_execucao, usuario_id: args.p_usuario,
+          perfil_id: state.aiArgs.p_perfil, oportunidade_id: state.aiArgs.p_oportunidade,
+          hash: state.aiArgs.p_hash, criado_em: new Date().toISOString(),
+        });
+        return { data: { codigo: 'CONCLUIDA' }, error: null };
+      }
       if (state.rpcError) return { data: null, error: state.rpcError };
       if (state.rpcRows !== undefined) return { data: state.rpcRows, error: null };
       const situacao = row => classificarSituacao(row.status, row.participacao_prazo_limite, Date.now());

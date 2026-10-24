@@ -1,0 +1,30 @@
+// Teste de handlers com hooks simulados: não substitui teste de hidratação em navegador.
+import { registerHooks } from 'node:module';
+import assert from 'node:assert/strict';
+let pending = false;
+globalThis.__iaPending = () => pending;
+registerHooks({resolve(specifier,context,next){
+ if(specifier==='react/jsx-runtime') return {url:'data:text/javascript,export function jsx(type,props,key){return {type,props,key}};export const jsxs=jsx;',shortCircuit:true};
+ if(specifier==='react') return {url:'data:text/javascript,export function useRef(value){return {current:value}}',shortCircuit:true};
+ if(specifier==='react-dom') return {url:'data:text/javascript,export function useFormStatus(){return {pending:globalThis.__iaPending()}}',shortCircuit:true};
+ return next(specifier,context);
+}});
+const {FormularioIA}=await import('../../components/analises/formulario-ia.tsx');
+let chamadas=0, liberar;
+const form=FormularioIA({action:async()=>{chamadas++;await new Promise(r=>liberar=r)},oportunidadeId:'o',perfilId:'p',atualizar:false,disabled:false});
+const evento=()=>({impedido:false,preventDefault(){this.impedido=true}});
+const primeiro=evento();form.props.onSubmit(primeiro);
+assert.equal(primeiro.impedido,false);
+const promessa=form.props.action(new FormData());
+const segundo=evento();form.props.onSubmit(segundo);
+assert.equal(segundo.impedido,true);assert.equal(chamadas,1);
+pending=true;
+const enviar=form.props.children.at(-1);
+const loading=enviar.type(enviar.props);
+assert.equal(loading.props['aria-busy'],true);
+assert.equal(loading.props.children[0].props.disabled,true);
+assert.equal(loading.props.children[1].props.children,'Estamos analisando os dados disponíveis');
+liberar();await promessa;
+const bloqueado=FormularioIA({action:async()=>{throw Error('não executar')},oportunidadeId:'o',perfilId:'p',atualizar:true,disabled:true});
+const eventoBloqueado=evento();bloqueado.props.onSubmit(eventoBloqueado);assert.equal(eventoBloqueado.impedido,true);
+console.log('PASS handlers: duplo envio bloqueado, loading acessível, saldo bloqueado');

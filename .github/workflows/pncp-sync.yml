@@ -60,3 +60,33 @@ jobs:
               exit 1
               ;;
           esac
+
+  recuperar-concessoes:
+    # Compartilha o disparo existente; habilitar somente após homologação conjunta.
+    # Não depende do resultado do job PNCP e não repete eventos/pagamentos.
+    if: github.ref == 'refs/heads/main' && vars.FINANCEIRO_WORKER_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Recuperar lote de concessões financeiras
+        shell: bash
+        env:
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          RECOVERY_URL: ${{ vars.FINANCEIRO_RECOVERY_URL }}
+        run: |
+          if [[ -z "${CRON_SECRET}" || "${RECOVERY_URL}" != https://*/api/cron/concessoes-financeiras ]]; then
+            echo "::error::Configuração da recuperação financeira ausente ou inválida."
+            exit 1
+          fi
+          # Sem corpo/log de credenciais, redirecionamentos ou retries.
+          curl_exit=0
+          http_status=$(curl --silent --output /dev/null \
+            --write-out '%{http_code}' \
+            --connect-timeout 10 --max-time 70 \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            "${RECOVERY_URL}") || curl_exit=$?
+          if [[ "${curl_exit}" -ne 0 || "${http_status}" != 200 ]]; then
+            echo "::error::Recuperação financeira incompleta (HTTP ${http_status}, curl ${curl_exit}); conferir logs e outbox."
+            exit 1
+          fi
+          echo "Lote de concessões financeiras concluído: HTTP 200."
