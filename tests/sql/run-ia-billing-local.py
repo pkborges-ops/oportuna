@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PostgreSQL descartável; contrato financeiro FIXO via arquivos externos.
 Não aceita URLs de banco. Não baixa arquivos nem modifica branches.
-Uso: python3 tests/sql/run-ia-billing-local.py /tmp/oportuna-finance-183e62e
+Uso: python3 tests/sql/run-ia-billing-local.py /tmp/oportuna-finance-28a48a7
 """
 import concurrent.futures
 import hashlib
@@ -13,12 +13,14 @@ import sys
 import tempfile
 import time
 
+from ia_snapshots_concorrencia import snapshots_concorrencia
+
 ROOT = Path(__file__).resolve().parents[2]
 PG = Path('/usr/lib/postgresql/16/bin')
 ENV = {k: v for k, v in os.environ.items() if not k.startswith('PG')}
 FINANCE = Path(sys.argv[1]).resolve()
-# SHA-256 dos bytes publicados no commit 183e62e56c65390111744e8e8ce2249cb5cb7949.
-EXPECTED = {'supabase/planos_e_permissoes_v1.sql': '9ec18461ea0d53834daf63f15e013000658ad32459ac6c005fd82ed61fa58884', 'supabase/asaas_assinaturas_v1.sql': '8674514d99c9efaca37f81d164dc9c103c315e5355f45f47334c63375177dd62', 'supabase/billing_concessoes_v1.sql': '01a52a4537648517a95d75e3ce1414991a192953743e7b0a3f3085946217d975'}
+# SHA-256 dos bytes publicados no commit 28a48a7371d46e7e590c19ba4922128fd093b519.
+EXPECTED = {'supabase/planos_e_permissoes_v1.sql': '9ec18461ea0d53834daf63f15e013000658ad32459ac6c005fd82ed61fa58884', 'supabase/asaas_assinaturas_v1.sql': 'b8d7b87ae0e9f5d7858d2f40ef821ecb124562f41803cbb9785550086695f2da', 'supabase/billing_concessoes_v1.sql': '01a52a4537648517a95d75e3ce1414991a192953743e7b0a3f3085946217d975', 'tests/sql/asaas-negativos.sql': 'b04df3b8f95c41e2c9ae9e1fd81413619db4779a3f906533b43918ff104cb9d9'}
 
 
 def run(args, **kw):
@@ -78,8 +80,11 @@ def main():
             file(ROOT / 'tests/sql/analises-ia-billing-adapter.sql')
             file(ROOT / 'supabase/analises_ia_interface_v1.sql')
             file(ROOT / 'tests/sql/analises-ia-interface.sql')
+            file(ROOT / 'tests/sql/analises-ia-homologacao-integrada.sql')
+            file(FINANCE / 'tests/sql/asaas-negativos.sql')
             concurrency(sql, psql)
             worker_outbox(sql)
+            snapshots_concorrencia(sql)
         except subprocess.CalledProcessError as error:
             print(error.stdout)
             print(error.stderr)

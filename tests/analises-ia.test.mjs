@@ -152,3 +152,64 @@ test('interrupção durante leitura HTTP preserva incerteza',async t=>{
  t.mock.method(globalThis,'fetch',async()=>({ok:true,json:async()=>{throw new TypeError('corpo interrompido');}}));
  await assert.rejects(()=>gerarAnaliseOportunidade({oportunidade,perfil}),e=>e.incerta===true);
 });
+
+for (const falharPrimeira of [false, true]) {
+ test(`solicitações com snapshots distintos não fazem retentativa automática (falha A=${falharPrimeira})`, async () => {
+  const dadosA = base.dados;
+  const dadosB = prepararDadosAnalise({...oportunidade,objeto:'Snapshot B'},perfil);
+  assert.notEqual(dadosA.hash,dadosB.hash);
+  const execucoes = new Map();
+  const chamadas = [];
+  const pendentes = new Map();
+  const iniciou = new Map();
+  const esperando = new Map(['a','b'].map(id=>[id,new Promise(resolve=>iniciou.set(id,resolve))]));
+  // Dublê somente da fronteira RPC. Locks/consumos são comprovados separadamente no PostgreSQL real.
+  const rpc = async (nome,args) => {
+   chamadas.push([nome,args.p_execucao]);
+   if (nome==='ia_reservar_v1') {
+    const id=args.p_hash===dadosA.hash?'a':'b';
+    if (execucoes.has(id)) return {data:{codigo:'EM_ANDAMENTO',execucao_id:id},error:null};
+    execucoes.set(id,'pending');
+    return {data:{codigo:'RESERVADA',execucao_id:id},error:null};
+   }
+   if (nome==='ia_iniciar_v1') {
+    execucoes.set(args.p_execucao,'processing');
+    return {data:{codigo:'INICIADA',token:`token-${args.p_execucao}`},error:null};
+   }
+   if (nome==='ia_finalizar_v1') {
+    execucoes.set(args.p_execucao,'completed');
+    return {data:{codigo:'CONCLUIDA'},error:null};
+   }
+   assert.equal(nome,'ia_falhar_v1');
+   execucoes.set(args.p_execucao,'failed');
+   return {data:'failed',error:null};
+  };
+  const geracoes=[];
+  const request = (id,dados) => executarAnaliseSegura({...base,dados,rpc,gerar:()=>{
+   geracoes.push(id);
+   iniciou.get(id)();
+   return new Promise((resolve,reject)=>pendentes.set(id,{resolve,reject}));
+  }});
+  const a=request('a',dadosA), b=request('b',dadosB);
+  await Promise.all([...esperando.values()]);
+  assert.deepEqual(geracoes,['a','b']);
+  const repeticoes=await Promise.all([request('a',dadosA),request('b',dadosB)]);
+  assert.ok(repeticoes.every(r=>r.codigo==='EM_ANDAMENTO'));
+  assert.deepEqual(geracoes,['a','b']);
+  if (falharPrimeira) {
+   pendentes.get('a').reject(new ErroGeracaoAnalise('FALHA_LOCAL'));
+   assert.equal((await a).codigo,'FALHOU');
+   assert.equal(execucoes.get('b'),'processing');
+   pendentes.get('b').resolve(resultado);
+   assert.equal((await b).codigo,'CONCLUIDA');
+  } else {
+   pendentes.get('b').resolve(resultado);
+   assert.equal((await b).codigo,'CONCLUIDA');
+   pendentes.get('a').resolve(resultado);
+   assert.equal((await a).codigo,'CONCLUIDA');
+   assert.deepEqual(chamadas.filter(([nome])=>nome==='ia_finalizar_v1').map(([,id])=>id),['b','a']);
+  }
+  assert.deepEqual(geracoes,['a','b'],'uma geração por solicitação distinta; nenhuma automática adicional');
+  assert.equal(chamadas.filter(([nome])=>nome==='ia_iniciar_v1').length,2);
+ });
+}

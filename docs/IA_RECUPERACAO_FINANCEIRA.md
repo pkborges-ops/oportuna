@@ -6,9 +6,9 @@ variável remota foi alterada e nenhuma chamada a produção, Asaas ou OpenAI fo
 ## Inspeção e decisão
 
 Foram lidos IA_BILLING_ADAPTER_V1.md e o contrato/worker publicados no commit
-183e62e56c65390111744e8e8ce2249cb5cb7949:
-- [Contrato financeiro](https://github.com/pkborges-ops/oportuna/blob/183e62e56c65390111744e8e8ce2249cb5cb7949/docs/BILLING_CONCESSOES.md)
-- [Worker da frente billing](https://github.com/pkborges-ops/oportuna/blob/183e62e56c65390111744e8e8ce2249cb5cb7949/lib/billing/entregas-financeiras.ts)
+28a48a7371d46e7e590c19ba4922128fd093b519:
+- [Contrato financeiro](https://github.com/pkborges-ops/oportuna/blob/28a48a7371d46e7e590c19ba4922128fd093b519/docs/BILLING_CONCESSOES.md)
+- [Worker da frente billing](https://github.com/pkborges-ops/oportuna/blob/28a48a7371d46e7e590c19ba4922128fd093b519/lib/billing/entregas-financeiras.ts)
 
 Há dois mecanismos: cron diário de alertas em vercel.json e workflow
 .github/workflows/pncp-sync.yml, disparado a cada 15 minutos, também manualmente.
@@ -179,7 +179,7 @@ npm test
 npm run lint
 npx tsc --noEmit
 git diff --check
-python3 tests/sql/run-ia-billing-local.py /tmp/oportuna-finance-183e62e
+python3 tests/sql/run-ia-billing-local.py /tmp/oportuna-finance-28a48a7
 ```
 
 Ainda precisam de homologação: JWT/roles e credentials reais do ambiente de teste,

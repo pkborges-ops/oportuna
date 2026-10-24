@@ -1,8 +1,8 @@
 # Etapa 2.1 — integração IA com concessões financeiras
 
 Implementação local em `feat/analise-ia-v1`. Contrato inspecionado no commit
-`183e62e56c65390111744e8e8ce2249cb5cb7949`:
-[docs/BILLING_CONCESSOES.md](https://github.com/pkborges-ops/oportuna/blob/183e62e56c65390111744e8e8ce2249cb5cb7949/docs/BILLING_CONCESSOES.md).
+`28a48a7371d46e7e590c19ba4922128fd093b519`:
+[docs/BILLING_CONCESSOES.md](https://github.com/pkborges-ops/oportuna/blob/28a48a7371d46e7e590c19ba4922128fd093b519/docs/BILLING_CONCESSOES.md).
 
 Nenhuma migration financeira foi copiada para esta branch. Para testes, arquivos
 originais foram baixados em /tmp; o runner verifica seus SHA-256. Nenhuma migration
@@ -168,10 +168,11 @@ versões compatíveis, revisões, outbox, histórico e o guard; não apagar tabe
 ## Testes e resultados
 
 Execução:
-`python3 tests/sql/run-ia-billing-local.py /tmp/oportuna-finance-183e62e`
+`python3 tests/sql/run-ia-billing-local.py /tmp/oportuna-finance-28a48a7`
 
-O diretório externo deve conter as três migrations cujos hashes estão fixados
-no runner. Não aceita URL de banco nem credencial remota. Inicializa PostgreSQL
+O diretório externo deve conter as três migrations e `tests/sql/asaas-negativos.sql`,
+cujos hashes estão fixados no runner. A extração reproduzível está em
+`docs/IA_HOMOLOGACAO_INTEGRADA.md`. Não aceita URL de banco nem credencial remota. Inicializa PostgreSQL
 16 UTF-8, owner postgres, socket Unix, sem TCP; remove o cluster ao terminar.
 
 Resultado final: **51 verificações/cenários PASS**. Incluem:
