@@ -95,6 +95,9 @@ for (const environment of ['sandbox', 'production']) {
     await db.exec(environments);
     const financialResult = await db.exec(readFileSync('tests/sql/billing-concessoes.sql', 'utf8'));
     const checks = financialResult.find(result => result.rows?.[0]?.verificacoes_financeiras)?.rows[0].verificacoes_financeiras;
+    const negativeResult = await db.exec(readFileSync('tests/sql/asaas-negativos.sql', 'utf8'));
+    const negativeChecks = negativeResult.find(result => result.rows?.[0]?.verificacoes_negativas)?.rows[0].verificacoes_negativas;
+    console.log(`PASS | negativos SQL ${environment} local | ${negativeChecks} verificacoes | eventos sinteticos, sem gateway`);
     assert.deepEqual(await snapshot(db), upgraded, 'Suite financeira deixou dados fora do rollback');
     // Preservacao/reaplicacao tambem com concessao e entrega realmente existentes.
     await db.exec(`update public.billing_payments set status='PAYMENT_RECEIVED' where gateway_payment_id='pay_preservado'`);

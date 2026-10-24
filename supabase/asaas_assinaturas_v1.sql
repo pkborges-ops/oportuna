@@ -487,6 +487,7 @@ language plpgsql security definer set search_path=pg_catalog as $$
 declare eid text:=p->>'id'; ev text:=p->>'event';
   s public.billing_subscriptions%rowtype; pay public.billing_payments%rowtype;
   cid text; sid text; pid text; referencia text; valor integer; venc date; periodo timestamptz;
+  restante_pago timestamptz;
   processado boolean;
 begin
   if eid is null or length(eid)>200 or ev is null or length(ev)>100 then
@@ -597,7 +598,9 @@ begin
           -- A migration financeira adicional pode fixar o periodo de calendario.
           -- A projecao usa exatamente o fim persistido pelo pagamento.
           periodo:=pay.periodo_fim;
-          update public.billing_subscriptions set status_local='active',
+          -- Pagamento tardio concede o periodo, sem reiniciar recorrencia cancelada.
+          update public.billing_subscriptions set status_local=case
+              when status_local='canceled' then 'canceled' else 'active' end,
             paid_until=greatest(coalesce(paid_until,periodo),periodo),
             proximo_vencimento=greatest(
               coalesce(proximo_vencimento,(venc+interval '1 month')::date),
@@ -626,16 +629,27 @@ begin
         update public.billing_payments set status=ev,recebido_em=now(),atualizado_em=now()
           where id=pay.id and estornado_em is null;
       elsif ev in ('PAYMENT_REFUNDED','PAYMENT_CHARGEBACK_REQUESTED') then
-        update public.billing_payments set status=ev,estornado_em=now(),atualizado_em=now()
-          where id=pay.id and estornado_em is null;
-        if pay.periodo_fim>now() and s.paid_until<=pay.periodo_fim then
-          update public.billing_subscriptions set status_local='review',atualizado_em=now()
-            where id=s.id and not exists (
-              select 1 from public.billing_subscriptions outro
-              where outro.usuario_id=s.usuario_id and outro.id<>s.id
-                and outro.status_local not in ('canceled','expired'));
-          update public.assinaturas_usuario set plano='FREE',status='canceled',fim_em=now()
-            where usuario_id=s.usuario_id and origem='ASAAS' and billing_subscription_id=s.id;
+        if pay.estornado_em is null then
+          update public.billing_payments set status=ev,estornado_em=now(),atualizado_em=now()
+            where id=pay.id and estornado_em is null;
+          if pay.confirmado_em is not null then
+            -- O maior periodo pode ser uma renovacao antecipada agora estornada.
+            -- Recalcular pelo ledger, preservando outros ciclos pagos deste contrato.
+            select max(periodo_fim) into restante_pago from public.billing_payments
+              where billing_subscription_id=s.id and confirmado_em is not null and estornado_em is null;
+            update public.billing_subscriptions set paid_until=restante_pago,
+              status_local=case when (restante_pago is null or restante_pago<=now())
+                and status_local<>'canceled' and not exists (
+                  select 1 from public.billing_subscriptions outro
+                  where outro.usuario_id=s.usuario_id and outro.id<>s.id
+                    and outro.status_local not in ('canceled','expired'))
+                then 'review' else status_local end,atualizado_em=now() where id=s.id;
+            update public.assinaturas_usuario set
+              plano=case when restante_pago>now() then s.plan_code else 'FREE' end,
+              status=case when restante_pago>now() then 'active' else 'canceled' end,
+              fim_em=case when restante_pago>now() then restante_pago else now() end
+              where usuario_id=s.usuario_id and origem='ASAAS' and billing_subscription_id=s.id;
+          end if;
         end if;
       else
         update public.billing_payments set status=ev,atualizado_em=now()

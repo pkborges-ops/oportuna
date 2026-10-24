@@ -1775,3 +1775,76 @@ E2E Pro/Business e cenários financeiros negativos permanecem pendentes.
 - Publicação não autoriza SQL remoto, credenciais reais, cobrança ou merge.
   Permanecem pendentes consumidor/guard transacional na frente Linux, worker,
   conciliação do legado, concorrência em homologação e E2Es negativos do Asaas.
+
+### Auditoria negativa financeira — local, 23/10/2026
+
+- Base `183e62e`, branch `feat/asaas-assinatura-pro`; workspace inicialmente
+  limpo. Matriz completa, evidencias, limites do Sandbox, roteiros manuais e
+  aprovacoes futuras em `docs/BILLING_QA_NEGATIVOS.md`.
+- Separacao de evidencias: Pro/Business, reentregas idempotentes e recuperacao
+  do 503 foram executados no Sandbox em 08/10 e 13/10, antes do contrato novo.
+  Recusa de 19/10 continua PARCIAL; expiracao, inadimplencia, confirmacao apos
+  atraso, estorno, chargeback, cancelamento e inversoes de ordem nao possuem
+  E2E completo documentado. O contrato de concessoes publicado em 21/10 nao
+  esta homologado remotamente; evidencias antigas nao provam sua outbox/guard.
+- Preflight sem valores sensiveis: Supabase publico local aponta para homologacao,
+  mas ASAAS_ENVIRONMENT, chave Asaas, token webhook, APP_BASE_URL e secret
+  administrativo Supabase estao ausentes tanto no arquivo local como no processo.
+  Nenhum secret foi solicitado no chat, recuperado da Vercel ou configurado.
+  Nao houve chamada a API Sandbox, consulta/SQL remoto ou operacao financeira.
+- Baseline: 157/157 testes e 143 verificacoes financeiras por ambiente simulado
+  PASS. Nova suite reproduziu falhas locais nos dois ambientes em memoria:
+  estorno de renovacao futura retirava Pro atual e deixava paid_until indevido;
+  confirmacao recebida apos cancelamento voltava status da recorrencia a active.
+- Correcao minima na RPC existente, arquivo asaas_assinaturas_v1.sql: recalcular
+  validade pelos pagamentos confirmados nao estornados da mesma assinatura,
+  preservar periodo atual pago e origem/vinculo da projecao; conservar canceled
+  ao confirmar pagamento tardio. Eventos diferentes do mesmo estorno nao voltam
+  a escrever pagamento/assinatura/projecao, comprovado por contador de UPDATEs.
+- 170/170 testes JavaScript PASS, incluindo 13 novos mocks de handler, claramente
+  identificados como simulacao. SQL: 56 verificacoes negativas PASS por ambiente,
+  mais as 143 financeiras e suites existentes de billing/ambientes. Pro/Business,
+  revisoes, atomicidade, cancelamento, inadimplencia, atraso de ciclo encerrado,
+  reentrega, isolamento e preservacao de dados/reaplicacao cobertos em memoria.
+- Lint, TypeScript, geradores Unicode/paridade `--check`, diff check, whitespace
+  de arquivos novos e build PASS. Build com avisos locais de OpenAI/e-mail ausentes,
+  sem impedir compilacao e sem usar servicos financeiros/IA remotos.
+- O contrato publicado, migration billing_concessoes_v1.sql, canario, checkout,
+  handler HTTP, pricing, RLS, dashboard e branch IA nao foram alterados. Falhas
+  anteriores a persistencia SQL ainda dependem da fila do provedor; outbox IA
+  nao substitui uma inbox de webhooks. Chargeback Sandbox exige procedimento
+  com Asaas; nenhum pedido de suporte foi enviado.
+- Nao houve commit, push, merge, migration remota, estorno/cancelamento remoto,
+  alteracao Production ou pagamento real. Aguardar revisao; canario produtivo
+  nao esta aprovado por esta execucao local. Latencia fria do dashboard conserva
+  o status anterior e nao foi medida nem modificada nesta etapa.
+
+### Revisao para publicacao das correcoes financeiras — 24/10/2026
+
+- Branch e PR conferidos: feat/asaas-assinatura-pro, PR #9 aberto, sem merge
+  ou auto-merge. HEAD e remoto em 183e62e antes desta publicacao; as correcoes
+  de estorno/cancelamento ainda eram locais. Publicacao autorizada pelo usuario,
+  exclusivamente nessa branch, sem SQL remoto ou operacoes financeiras.
+- Escopo de sete arquivos: RPC de processamento na migration base, suite SQL
+  negativa, mocks do handler, runner SQL e tres documentos. Contrato/envelope,
+  migration de concessoes, guard, recuperador, canario, checkout e handler HTTP
+  identicos a 183e62e. Nenhuma mudanca em Production ou na branch IA.
+- Reexecucao: 170/170 testes JavaScript PASS; 56 verificacoes negativas e 143
+  financeiras por ambiente simulado PASS, alem das suites existentes; upgrade,
+  reaplicacao e dados/concessoes/outbox preservados. Lint, TypeScript, geradores
+  Unicode/paridade --check, git diff --check e build PASS. Avisos locais de
+  OpenAI/e-mail ausentes nao impediram compilacao; nenhum servico remoto usado.
+- Consumidor/worker Linux publicado em 5e36d3c foi consultado somente via
+  objetos Git: mesmo hook ia_receber_concessao_financeira_v1(jsonb), envelope v1,
+  RPCs de reserva/entrega, estados e guard financeiro, sem depender do status
+  da recorrencia ou usar paid_until como ciclo. Compatibilidade de interface
+  preservada; nao se declara homologacao conjunta ou concorrente nesta etapa.
+- Runner Linux fixa os hashes financeiros de 183e62e. Precisa adotar a revisao
+  nova da migration base e repetir sua suite no PostgreSQL 16. Tentativa adicional
+  em PGlite nao concluiu a carga do bootstrap Linux por falta de extensoes
+  pgcrypto/pg_trgm; nao foi registrada como PASS nem alterou o consumidor.
+  A suite financeira propria passou integralmente; a limitacao nao foi
+  contornada criando mocks do consumidor ou mudando o contrato publicado.
+- Pendentes: homologar as correcoes em ambiente autorizado, negativos reais do
+  Asaas e integracao operacional/concorrente com a frente Linux. Publicacao nao
+  aprova canario real, migration remota ou merge. .env.local permanece ignorado.

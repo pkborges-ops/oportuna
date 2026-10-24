@@ -5,6 +5,10 @@ configurar secrets, criar cobrança real ou fazer merge nesta etapa.
 
 ## Antes da liberação
 
+- [ ] Revisar a [matriz negativa de 23/10](BILLING_QA_NEGATIVOS.md). Homologar
+  as correcoes locais D1 (estorno de renovacao futura preserva periodo atual)
+  e D2 (confirmacao atrasada preserva recorrencia cancelada). A revisao atual
+  da RPC ainda nao foi aplicada remotamente; mocks/SQL nao fecham E2E do Asaas.
 - [ ] Aprovar preços/franquias produtivos e limite comercial de perfis Business.
   Não anunciar equipes ou Assistente de Participação como disponíveis.
 - [ ] Concluir E2E Sandbox: cartão recusado, vencimento, estorno, chargeback e
