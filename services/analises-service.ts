@@ -54,17 +54,20 @@ async function obterContextoAutenticado() {
 export async function buscarAnalisePorPerfil(
   oportunidadeId: string,
   perfilId: string,
+  execucaoId?: string,
 ) {
   const { supabase, usuarioId } = await obterContextoAutenticado();
-  const { data: versao, error: erroVersao } = await supabase
+  let consulta = supabase
     .from("ia_resultados_v1")
     .select("versao_schema, conteudo, execucao_id, oportunidade_id, perfil_id, score, justificativa, resumo, pontos_atencao, criado_em")
     .eq("usuario_id", usuarioId)
     .eq("oportunidade_id", oportunidadeId)
     .eq("perfil_id", perfilId)
     .order("criado_em", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  if (execucaoId) consulta = consulta.eq("execucao_id", execucaoId);
+  const { data: versao, error: erroVersao } = await consulta.maybeSingle();
+  if (execucaoId && !versao && !erroVersao) throw new Error("Resultado salvo indisponível.");
   if (erroVersao) throw new Error("Nao foi possivel buscar a versao da analise.");
   if (versao) return mapearAnalise({ ...versao, id: versao.execucao_id } as AnaliseRow);
   const { data, error } = await supabase

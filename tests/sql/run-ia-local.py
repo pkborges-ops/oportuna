@@ -30,7 +30,8 @@ with tempfile.TemporaryDirectory(prefix='oportuna-ia-local-') as temp:
         psql = [PG / 'psql', '-X', '-h', sock, '-p', '55439', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1']
         out = run(psql + ['-f', 'tests/sql/ia-bootstrap-local.sql', '-f', 'supabase/analises_ia_execucoes_v1.sql',
                           '-f', 'tests/sql/analises-ia-execucoes.sql',
-                          '-f', 'supabase/analises_ia_conteudo_v2.sql', '-f', 'tests/sql/analises-ia-conteudo-v2.sql'])
+                          '-f', 'supabase/analises_ia_conteudo_v2.sql', '-f', 'tests/sql/analises-ia-conteudo-v2.sql',
+                          '-f', 'supabase/analises_ia_interface_v1.sql', '-f', 'tests/sql/analises-ia-interface.sql'])
         print(out.stderr)
         print("\n".join(line for line in out.stdout.splitlines() if line.startswith("PASS")))
 

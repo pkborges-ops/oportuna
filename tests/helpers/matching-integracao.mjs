@@ -97,6 +97,7 @@ beforeEach(() => {
     ia_resultados_v1: [],
   };
   state.calls = [];
+  state.franquia = undefined; state.estadoIA = null; state.erroIA = null; state.codigoReserva = null;
   state.aiCalls = 0;
   state.rpcRows = undefined;
   state.rpcError = null;
@@ -208,6 +209,7 @@ test("detalhes usam mesmo perfil e separam aderência da IA persistida", async (
   assert.match(html, /90% aderência/);
   assert.doesNotMatch(html, /81% · análise por IA/);
   assert.match(html, /Justificativa histórica/);
+  assert.match(html, /Nome do perfil na data da análise não registrado/);
   assert.match(html, /Palavras encontradas: software/);
   assert.match(
     html,
@@ -474,4 +476,74 @@ test("histórico da Etapa 1 continua consultável sem reinterpretar score",async
  assert.match(html,/Justificativa original/); assert.match(html,/Ponto original/);
  assert.doesNotMatch(html,/81%/); assert.equal(state.tables.ia_resultados_v1[0].score,81);
  assert.equal(state.aiCalls,0);
+});
+
+const saldoIA = (plano, disponiveis=2) => ({codigo:'OK',plano,limite:3,consumidas:3-disponiveis,reservadas:0,disponiveis,inicio:null,fim:null,renovacao:null});
+test('interface IA: Free demonstração disponível e esgotada; sem renovação inventada',async()=>{
+ state.plan='FREE'; state.franquia={...saldoIA('FREE',1),limite:1,consumidas:0};
+ const inicial=await renderDetail({perfilId:'p1'});
+ assert.match(inicial,/Plano Free/); assert.match(inicial,/demonstração vitalícia/);
+ assert.match(inicial,/Analisar oportunidade/); assert.doesNotMatch(inicial,/Fim do ciclo/);
+ state.franquia={...state.franquia,consumidas:1,disponiveis:0};
+ const fim=await renderDetail({perfilId:'p1'});
+ assert.match(fim,/Limite de análises/); assert.match(fim,/Conhecer os planos pagos/);
+ assert.match(fim,/disabled=""/); assert.equal(state.aiCalls,0);
+});
+for(const plano of ['PRO','BUSINESS']) test(`interface IA: ${plano} usa franquia efetiva e fim conhecido`,async()=>{
+ state.franquia={...saldoIA(plano,6),limite:7,consumidas:1,fim:'2027-01-01T00:00:00Z'};
+ const html=await renderDetail({perfilId:'p1'});
+ assert.match(html,new RegExp(`Plano ${plano==='PRO'?'Pro':'Business'}`));
+ assert.match(html,/Disponíveis/); assert.match(html,/>6<\/dd>/); assert.match(html,/Fim do ciclo/);
+ assert.doesNotMatch(html,/Conhecer os planos pagos|>200<|>1\.000<\/dd>/);
+});
+test('interface IA: ciclo não autorizado não inventa saldo nem oferece compra',async()=>{
+ state.franquia={...saldoIA('PRO',0),codigo:'CICLO_NAO_AUTORIZADO',limite:null};
+ const html=await renderDetail({perfilId:'p1'});
+ assert.match(html,/ciclo da assinatura/); assert.match(html,/Saldo indisponível/);
+ assert.doesNotMatch(html,/Conhecer os planos pagos/);
+});
+for(const [estado, texto] of [['pending','Estamos analisando'],['processing','Estamos analisando'],['uncertain','reserva permanece retida'],['failed','Nenhuma unidade foi consumida']]) {
+ test(`interface IA: recarga recupera ${estado} sem chamar provedor`,async()=>{
+  state.estadoIA=estado;
+  const html=await renderDetail({perfilId:'p1'});
+  assert.match(html,new RegExp(texto)); assert.match(html,/Consultar estado e saldo/);
+  assert.match(html,/role="status"/); assert.equal(state.aiCalls,0);
+  if(estado!=='failed') {
+   await assert.rejects(analisarOportunidade(form({oportunidadeId:'o1',perfilId:'p1'})),e=>e.url.includes(estado==='uncertain'?'INCERTA':'EM_ANDAMENTO'));
+   assert.equal(state.aiCalls,0);
+  }
+ });
+}
+test('interface IA: concluída, reconsulta gratuita, mudança cosmética e atualização explícita',async()=>{
+ const data=form({oportunidadeId:'o1',perfilId:'p1'});
+ await assert.rejects(analisarOportunidade(data),e=>e.url.includes('CONCLUIDA'));
+ let html=await renderDetail({perfilId:'p1'});
+ assert.match(html,/Reconsulta gratuita/); assert.match(html,/Concluída em/);
+ assert.match(html,/Perfil na data da análise/); assert.match(html,/Informações não verificadas/);
+ assert.equal(state.aiCalls,1);
+ state.tables.oportunidades_editais[0].objeto='  '+state.tables.oportunidades_editais[0].objeto+'  ';
+ await assert.rejects(analisarOportunidade(data),e=>e.url.includes('EXISTENTE'));
+ assert.equal(state.aiCalls,1);
+ state.tables.perfis_empresa[0].nome_empresa='Nome novo';
+ html=await renderDetail({perfilId:'p1'});
+ assert.match(html,/informações anteriores/); assert.match(html,/Gerar análise atualizada/);
+ assert.doesNotMatch(html,/Perfil na data da análise: Nome novo/);
+ state.franquia=saldoIA('PRO',0); state.codigoReserva='LIMITE_ATINGIDO';
+ await assert.rejects(analisarOportunidade(form({oportunidadeId:'o1',perfilId:'p1',atualizar:'true'})),e=>e.url.includes('LIMITE_ATINGIDO'));
+ assert.equal(state.aiCalls,1);
+ assert.match(await renderDetail({perfilId:'p1'}),/Limite de análises/);
+ state.franquia=saldoIA('PRO',2);state.codigoReserva=null;
+ await assert.rejects(analisarOportunidade(form({oportunidadeId:'o1',perfilId:'p1',atualizar:'true'})),e=>e.url.includes('CONCLUIDA'));
+ assert.equal(state.aiCalls,2);
+});
+test('interface IA: indisponibilidade falha fechada e não expõe erros ou mensagens de URL',async()=>{
+ state.erroIA={message:'segredo interno RPC'};
+ const html=await renderDetail({perfilId:'p1',ia:'segredo interno RPC',erro:'stack token'});
+ assert.match(html,/Não foi possível consultar/); assert.doesNotMatch(html,/segredo interno RPC|stack token/);
+ assert.equal(state.aiCalls,0);
+});
+test('interface IA: sem perfil orienta cadastro; histórico sem snapshot não recebe nome atual',async()=>{
+ state.tables.perfis_empresa=[];
+ assert.match(await renderDetail({}),/crie um perfil de empresa/);
+ assert.equal(state.calls.some(c=>c.rpc==='ia_consultar_interface_v1'),false);
 });

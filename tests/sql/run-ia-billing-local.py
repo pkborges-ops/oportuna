@@ -76,6 +76,8 @@ def main():
             file(ROOT / 'tests/sql/ia-billing-legado-local.sql')
             file(ROOT / 'supabase/analises_ia_billing_adapter_v1.sql')
             file(ROOT / 'tests/sql/analises-ia-billing-adapter.sql')
+            file(ROOT / 'supabase/analises_ia_interface_v1.sql')
+            file(ROOT / 'tests/sql/analises-ia-interface.sql')
             concurrency(sql, psql)
             worker_outbox(sql)
         except subprocess.CalledProcessError as error:

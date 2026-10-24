@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { gerarAnaliseOportunidade } from "@/lib/openai/analise-oportunidade";
+import { consultarInterfaceIA } from "@/services/interface-ia-service";
+import { mensagensIA } from "@/lib/analises/apresentacao";
 import { prepararDadosAnalise } from "@/lib/analises/contrato";
 import { executarAnaliseSegura } from "@/lib/analises/executar";
 import { criarClienteSupabaseAdmin } from "@/lib/supabase/admin";
@@ -129,7 +131,7 @@ export async function analisarOportunidade(formData: FormData) {
     redirecionarComErro(redirectTo, "Nao foi possivel buscar a analise.");
   }
 
-  if (analiseExistente) {
+  if (analiseExistente && formData.get("atualizar") !== "true") {
     redirect(`${redirectTo}&mensagem=Analise existente reutilizada.`);
   }
 
@@ -140,41 +142,42 @@ export async function analisarOportunidade(formData: FormData) {
       buscarPerfilPorId(perfilId),
     ]);
     if (!oportunidade || !perfil) throw new Error("Perfil ou oportunidade invalida.");
-    // Identidade vem de getUser; hash, versão e snapshot nunca vêm do formulário.
-    const admin = criarClienteSupabaseAdmin();
-    const resultado = await executarAnaliseSegura({
-      // Reserva leva o JWT real: auth.uid() é conferido dentro da transação SQL.
-      // Token e operações de execução continuam exclusivos do backend.
-      rpc: (nome, args) => nome === "ia_reservar_v1"
-        ? supabase.rpc(nome, args)
-        : admin.rpc(nome, args),
-      gerar: () => gerarAnaliseOportunidade({ oportunidade, perfil }),
-      usuarioId, perfilId, oportunidadeId,
-      dados: prepararDadosAnalise(oportunidade, perfil),
-    });
-    codigo = resultado.codigo;
-    if (codigo === "INCERTA") {
-      console.warn("ia_execucao_requer_reconciliacao", {
-        usuarioId, execucaoId: resultado.execucao_id, codigo,
+    const interfaceIA = await consultarInterfaceIA(oportunidade, perfil);
+    if (interfaceIA.atual) {
+      codigo = "EXISTENTE";
+    } else if (interfaceIA.estado && interfaceIA.estado !== "failed") {
+      codigo = interfaceIA.estado === "uncertain" ? "INCERTA" : "EM_ANDAMENTO";
+    } else {
+      // Identidade vem de getUser; hash, versão e snapshot nunca vêm do formulário.
+      const admin = criarClienteSupabaseAdmin();
+      const resultado = await executarAnaliseSegura({
+        // Reserva leva o JWT real: auth.uid() é conferido dentro da transação SQL.
+        // Token e operações de execução continuam exclusivos do backend.
+        rpc: (nome, args) => nome === "ia_reservar_v1"
+          ? supabase.rpc(nome, args)
+          : admin.rpc(nome, args),
+        gerar: () => gerarAnaliseOportunidade({ oportunidade, perfil }),
+        usuarioId, perfilId, oportunidadeId,
+        dados: prepararDadosAnalise(oportunidade, perfil),
       });
+      codigo = resultado.codigo;
+      if (codigo === "INCERTA") {
+        console.warn("ia_execucao_requer_reconciliacao", {
+          usuarioId, execucaoId: resultado.execucao_id, codigo,
+        });
+      }
     }
   } catch {
-    redirecionarComErro(redirectTo, "Não foi possível preparar a análise.");
+    redirect(`${redirectTo}&ia=TEMPORARIO&erro=Falha%20temporaria`);
   }
   if (codigo === "LIMITE_ATINGIDO") {
     await registrarEventoPlano(supabase, usuarioId, "atingiu_limite_ia");
   }
   if (codigo !== "CONCLUIDA" && codigo !== "EXISTENTE") {
-    const mensagens: Record<string, string> = {
-      LIMITE_ATINGIDO: "Limite de análises por IA atingido.",
-      CICLO_NAO_AUTORIZADO: "O ciclo da assinatura ainda não está disponível para análises.",
-      EM_ANDAMENTO: "Esta análise já está em andamento.",
-      INCERTA: "Estamos verificando o resultado desta análise. Não será iniciada outra automaticamente.",
-      FALHOU: "Não foi possível concluir a análise. Nenhuma unidade foi consumida.",
-    };
-    redirecionarComErro(redirectTo, mensagens[codigo] ?? "Não foi possível iniciar a análise.");
+    const seguro = Object.hasOwn(mensagensIA, codigo) ? codigo : "TEMPORARIO";
+    redirect(`${redirectTo}&ia=${seguro}`);
   }
 
   revalidatePath(`/oportunidades/${oportunidadeId}`);
-  redirect(`${redirectTo}&mensagem=${codigo === "EXISTENTE" ? "Analise existente reutilizada." : "Analise gerada com sucesso."}`);
+  redirect(`${redirectTo}&ia=${codigo}&mensagem=${codigo === "EXISTENTE" ? "Analise existente reutilizada." : "Analise gerada com sucesso."}`);
 }
